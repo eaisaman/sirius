@@ -6,7 +6,7 @@
     {
       "type": "file",
       "filename": "${opts:base}/logs/con-log-${opts:serverId}.log",
-      "pattern": "connector",
+      "pattern": "chat",
       "maxLogSize": 1048576,
       "layout": {
         "type": "basic"
