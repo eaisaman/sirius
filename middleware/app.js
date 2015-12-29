@@ -10,12 +10,17 @@ app.set('name', 'sirius');
 app.set('chatRoute', 'SIRIUS_CHAT_ROUTE');
 app.set('loginChannel', 'SIRIUS_LOGIN_CHANNEL');
 
-app.set('inviteSignal', 1001);
-app.set('connectSignal', 1002);
-app.set('disconnectSignal', 1003);
-app.set('pauseSignal', 1004);
-app.set('resumeSignal', 1005);
-app.set('messageSignal', 1006);
+app.set('inviteSignal', 901);
+app.set('messageSignal', 902);
+app.set('acceptSignal', 903);
+
+app.set('chatInviteSignal', 1001);
+app.set('chatConnectSignal', 1002);
+app.set('chatDisconnectSignal', 1003);
+app.set('chatPauseSignal', 1004);
+app.set('chatResumeSignal', 1005);
+app.set('chatMessageSignal', 1006);
+app.set('chatAcceptSignal', 1007);
 
 app.set('topicInviteSignal', 2001);
 app.set('topicPauseSignal', 2002);
@@ -32,11 +37,20 @@ app.set('topicMemberType', 2);
 
 app.set('chatOpenState', 1);
 app.set('chatPauseState', 2);
-app.set('chatDestroyState', 3);
+app.set('chatCloseState', 3);
+app.set('chatDestroyState', 4);
 
 app.set('topicOpenState', 11);
 app.set('topicPauseState', 12);
-app.set('topicDestroyState', 13);
+app.set('topicCloseState', 13);
+app.set('topicDestroyState', 14);
+
+app.set('conversationTextType', 1);
+app.set('conversationImageType', 2);
+app.set('conversationVideoType', 3);
+app.set('conversationLocationType', 4);
+app.set('conversationVoiceType', 5);
+app.set('conversationFileType', 6);
 
 // app configuration
 app.configure('production|development', 'chat', function () {
