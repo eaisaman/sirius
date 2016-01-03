@@ -1,0 +1,6 @@
+{
+  "mocha.host": "127.0.0.1",
+  "mocha.port": 3010,
+  "mocha.route": "SIRIUS_CHAT_ROUTE",
+  "mocha.loginChannel": "SIRIUS_LOGIN_CHANNEL"
+}

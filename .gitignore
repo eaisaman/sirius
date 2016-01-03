@@ -1,2 +1,5 @@
 meelet
 .idea
+npm-debug.log
+node_modules
+results.txt
