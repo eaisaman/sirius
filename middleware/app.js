@@ -21,6 +21,7 @@ app.set('chatPauseSignal', 1004);
 app.set('chatResumeSignal', 1005);
 app.set('chatMessageSignal', 1006);
 app.set('chatAcceptSignal', 1007);
+app.set('chatCloseSignal', 1008);
 
 app.set('topicInviteSignal', 2001);
 app.set('topicPauseSignal', 2002);
