@@ -328,7 +328,7 @@
             url += ':' + port;
         }
 
-        self.socket = io.connect(url, {'force new connection': true, reconnect: false});
+        self.socket = io.connect(url, {'force new connection': true, reconnect: true});
 
         self.socket.on('connect', function () {
             console.log('[pomeloclient.init] websocket connected!');
@@ -339,6 +339,7 @@
 
         self.socket.on('reconnect', function () {
             console.log('reconnect');
+            self.emit('reconnect');
         });
 
         self.socket.on('message', function (data) {

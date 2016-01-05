@@ -1563,9 +1563,9 @@ Handler.prototype.pushSingle = function (msg, session, next) {
  *
  * Publish message to topic in channel.
  *
- * @param msg
- * @param session
- * @param next
+ * @param msg{object} Msg contains userId, chatId, topicId, payload, route(optional)
+ * @param session{object}
+ * @param next{function}
  * @return {Void}
  */
 Handler.prototype.pushTopic = function (msg, session, next) {

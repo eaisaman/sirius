@@ -770,6 +770,52 @@ describe('Chat', function () {
         });
     })
 
+    it('Send message to topic', function (done) {
+        var msg = "Let's vote against greenhouse air emission";
+
+        async.parallel([
+            function (next) {
+                async.each([userGuest1Obj, userGuest2Obj], function (userObj, callback) {
+                    function onTopicMessage(data) {
+                        if (data.userId === userObj.userId && data.payload === msg && data.chatId === userHostObj.chatId && data.topicId === userHostObj.topicId) {
+                            userObj.emitter.removeListener("topicMessage", onTopicMessage);
+                            callback(null);
+                        }
+                    }
+
+                    userHostObj.emitter.addListener("topicMessage", onTopicMessage);
+                }, function (err) {
+                    next(err);
+                });
+            },
+            function (next) {
+                async.each([userGuest1Obj, userGuest2Obj], function (userObj, callback) {
+                    userObj.pomelo.request("chat.chatHandler.pushTopic", {
+                        userId: userObj.userId,
+                        chatId: userHostObj.chatId,
+                        topicId:userHostObj.topicId,
+                        payload: msg
+                    }, function (data) {
+                        switch (data.code) {
+                            case 500:
+                                callback(data.msg);
+                                break;
+                            case 200:
+                                callback(null);
+                                break;
+                        }
+                    });
+                }, function (err) {
+                    next(err);
+                });
+            }
+        ], function (err) {
+            should.not.exist(err);
+
+            done();
+        })
+    })
+
     it('Pause topic', function (done) {
         var arr = [];
 
