@@ -1,15 +1,22 @@
-global.io = require("socket.io-client");
-var pomeloclient = require('../pomeloclient').pomelo;
+var host = process.env['mocha.host'];
+var port = process.env['mocha.port'];
+var route = process.env['mocha.route'];
+var transport = process.env['mocha.transport'];
+var loginChannel = process.env['mocha.loginChannel'];
+var pomeloclient;
+
+if (transport === "websocket") {
+    global.WebSocket = require('ws');
+    pomeloclient = require('../pomelo-websocket-client').pomelo;
+} else if (transport === "sio") {
+    global.io = require("socket.io-client");
+    pomeloclient = require('../pomeloclient').pomelo;
+}
 
 var should = require("should");
 var async = require('async');
 var _ = require('underscore');
 var uuid = require('node-uuid');
-
-var host = process.env['mocha.host'];
-var port = process.env['mocha.port'];
-var route = process.env['mocha.route'];
-var loginChannel = process.env['mocha.loginChannel'];
 
 var userHostObj = {
     userId: "52591a12c763d5e4585563d0",
@@ -124,7 +131,12 @@ describe('Chat', function () {
             function (next) {
                 async.waterfall([
                     function (cb) {
-                        userHostObj.pomelo.init({host: host, port: port}, function () {
+                        userHostObj.pomelo.init({
+                            host: host,
+                            port: port,
+                            deviceId: userHostObj.deviceId,
+                            reconnect: true
+                        }, function () {
                             userHostObj.pomelo.on(route, onEvent(userHostObj.emitter));
 
                             cb(null);
@@ -133,7 +145,12 @@ describe('Chat', function () {
                         });
                     },
                     function (cb) {
-                        userGuest1Obj.pomelo.init({host: host, port: port}, function () {
+                        userGuest1Obj.pomelo.init({
+                            host: host,
+                            port: port,
+                            deviceId: userGuest1Obj.deviceId,
+                            reconnect: true
+                        }, function () {
                             userGuest1Obj.pomelo.on(route, onEvent(userGuest1Obj.emitter));
 
                             cb(null);
@@ -142,7 +159,12 @@ describe('Chat', function () {
                         });
                     },
                     function (cb) {
-                        userGuest2Obj.pomelo.init({host: host, port: port}, function () {
+                        userGuest2Obj.pomelo.init({
+                            host: host,
+                            port: port,
+                            deviceId: userGuest2Obj.deviceId,
+                            reconnect: true
+                        }, function () {
                             userGuest2Obj.pomelo.on(route, onEvent(userGuest2Obj.emitter));
 
                             cb(null);
@@ -793,7 +815,7 @@ describe('Chat', function () {
                     userObj.pomelo.request("chat.chatHandler.pushTopic", {
                         userId: userObj.userId,
                         chatId: userHostObj.chatId,
-                        topicId:userHostObj.topicId,
+                        topicId: userHostObj.topicId,
                         payload: msg
                     }, function (data) {
                         switch (data.code) {

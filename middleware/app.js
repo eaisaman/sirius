@@ -57,8 +57,11 @@ app.set('conversationFileType', 6);
 app.configure('production|development', 'chat', function () {
     app.set('connectorConfig',
         {
-            connector: pomelo.connectors.sioconnector,
-            heartbeat : 3
+            connector: pomelo.connectors.hybridconnector,
+            //connector: pomelo.connectors.sioconnector,
+            heartbeat : 3,
+            useDict: true,
+            useProtobuf: false
             //Comment to use HTTP mode
             //key: fs.readFileSync('../shared/server.key'),
             //cert: fs.readFileSync('../shared/server.crt')

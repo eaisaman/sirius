@@ -12,12 +12,15 @@
     "node-uuid": "^1.4.7",
     "pomelo": "1.2.0",
     "pomelo-logger": "0.1.7",
+    "pomelo-protobuf": "^0.4.0",
+    "pomelo-protocol": "^0.1.6",
     "shelljs": "^0.5.3",
     "should": "~8.0.1",
     "socket.io": "0.9.16",
     "socket.io-client": "0.9.16",
     "underscore": "~1.6.0",
-    "underscore.string": "~2.3.3"
+    "underscore.string": "~2.3.3",
+    "ws": "^0.4.25"
   },
   "devDependencies": {
     "grunt": "^0.4.5",
