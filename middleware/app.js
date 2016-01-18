@@ -54,12 +54,93 @@ app.set('conversationVoiceType', 5);
 app.set('conversationFileType', 6);
 
 // app configuration
-app.configure('production|development', 'chat', function () {
+app.configure('production|development', 'all', function () {
+    //For engine.io-parser@0.6.3, the first byte of payload should be packet type
+    //2. ping, 3. pong, 4. message, 5. upgrade, 6.noop
+    //See io.socket.engineio.parser.Parser for reference
+
+    pomelo.connectors.hybridconnector.prototype.emit = function (type) {
+        var args = Array.prototype.slice.call(arguments);
+        if (type === "connection") {
+            var self = this,
+                hybridsocket = args[1],
+                socket = hybridsocket.socket;
+
+            var sessionService = app.get('sessionService');
+
+            var listeners = socket.listeners("message");
+            socket.removeAllListeners("message");
+            listeners && listeners.forEach(function (fn) {
+                socket.addListener("message", function (msg) {
+                    var args = Array.prototype.slice.call(arguments);
+
+                    var session = sessionService.get(hybridsocket.id),
+                        clientConfig = session.get("clientConfig");
+
+                    if (!clientConfig) {
+                        clientConfig = {};
+                        session.set("clientConfig", clientConfig);
+                    }
+
+                    if (clientConfig.payloadStart == null) {
+                        if (args[0]) {
+                            //decode, test the payload start location
+                            var offset;
+                            for (var i = 0; i < 10; i++) {
+                                if (i + 3 < msg.length) {
+                                    var type = msg[i];
+                                    var length = ((msg[i + 1]) << 16 | (msg[i + 2]) << 8 | msg[i + 3]) >>> 0;
+                                    if (length == msg.length - 4) {
+                                        offset = i;
+                                    }
+                                }
+                            }
+                            if (offset != null) {
+                                clientConfig.payloadStart = offset;
+                                if (offset) clientConfig.payloadAhead = msg.slice(0, offset);
+                                args[0] = msg.slice(offset);
+                            } else {
+                                args[0] = null;
+                            }
+                        }
+                    }
+
+                    fn.apply(null, args)
+                });
+            });
+
+            hybridsocket.sendRaw = function (msg) {
+                var args = Array.prototype.slice.call(arguments);
+                if (args[0]) {
+                    //encode, add packet type as the first byte
+                    if (msg instanceof String) {
+                        msg = new Buffer(msg);
+                    } else if (!(msg instanceof Buffer)) {
+                        msg = new Buffer(JSON.stringify(msg));
+                    }
+
+                    var session = sessionService.get(this.id),
+                        clientConfig = session.get("clientConfig");
+
+                    if (clientConfig && clientConfig.payloadStart) {
+                        var ahead = new Buffer();
+                        for (var i = 9; i < clientConfig.payloadStart; i++) ahead[i] = clientConfig.payloadAhead[i];
+                        args[0] = Buffer.concat([ahead, msg]);
+                    }
+                }
+
+                hybridsocket.constructor.prototype.sendRaw.apply(hybridsocket, args);
+            }
+        }
+
+        pomelo.connectors.hybridconnector.prototype.__proto__.emit.apply(this, args);
+    }
+
     app.set('connectorConfig',
         {
             connector: pomelo.connectors.hybridconnector,
             //connector: pomelo.connectors.sioconnector,
-            heartbeat : 3,
+            heartbeat: 3,
             useDict: true,
             useProtobuf: false
             //Comment to use HTTP mode
