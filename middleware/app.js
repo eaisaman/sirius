@@ -90,46 +90,71 @@ app.configure('production|development', 'all', function () {
                                 if (i + 3 < msg.length) {
                                     var type = msg[i];
                                     var length = ((msg[i + 1]) << 16 | (msg[i + 2]) << 8 | msg[i + 3]) >>> 0;
-                                    if (length == msg.length - 4) {
+                                    if (length == msg.length - i - 4) {
                                         offset = i;
+                                        break;
                                     }
                                 }
                             }
-                            if (offset != null) {
-                                clientConfig.payloadStart = offset;
-                                if (offset) clientConfig.payloadAhead = msg.slice(0, offset);
-                                args[0] = msg.slice(offset);
-                            } else {
-                                args[0] = null;
-                            }
+                            clientConfig.payloadStart = offset;
                         }
                     }
+
+                    if (clientConfig.payloadStart != null) {
+                        if (clientConfig.payloadStart) clientConfig.payloadAhead = msg.slice(0, clientConfig.payloadStart);
+                        args[0] = msg.slice(clientConfig.payloadStart);
+                    } else {
+                        args[0] = null;
+                    }
+                    if (args[1]) args[1].buffer = args[0];
 
                     fn.apply(null, args)
                 });
             });
 
+            //encode, add packet type as the first byte
+            hybridsocket.prependPayload = function (msg) {
+                if (msg instanceof String) {
+                    msg = new Buffer(msg);
+                } else if (!(msg instanceof Buffer)) {
+                    msg = new Buffer(JSON.stringify(msg));
+                }
+
+                var session = sessionService.get(this.id),
+                    clientConfig = session.get("clientConfig");
+
+                if (clientConfig && clientConfig.payloadStart) {
+                    msg = Buffer.concat([clientConfig.payloadAhead, msg]);
+                }
+
+                return msg;
+            }
+
             hybridsocket.sendRaw = function (msg) {
                 var args = Array.prototype.slice.call(arguments);
                 if (args[0]) {
-                    //encode, add packet type as the first byte
-                    if (msg instanceof String) {
-                        msg = new Buffer(msg);
-                    } else if (!(msg instanceof Buffer)) {
-                        msg = new Buffer(JSON.stringify(msg));
-                    }
-
-                    var session = sessionService.get(this.id),
-                        clientConfig = session.get("clientConfig");
-
-                    if (clientConfig && clientConfig.payloadStart) {
-                        var ahead = new Buffer();
-                        for (var i = 9; i < clientConfig.payloadStart; i++) ahead[i] = clientConfig.payloadAhead[i];
-                        args[0] = Buffer.concat([ahead, msg]);
-                    }
+                    args[0] = this.prependPayload(args[0]);
                 }
 
                 hybridsocket.constructor.prototype.sendRaw.apply(hybridsocket, args);
+            }
+
+            hybridsocket.sendForce = function (msg) {
+                var args = Array.prototype.slice.call(arguments);
+                if (args[0]) {
+                    args[0] = this.prependPayload(args[0]);
+                }
+
+                hybridsocket.constructor.prototype.sendForce.apply(hybridsocket, args);
+            }
+
+            hybridsocket.handshakeResponse = function (resp) {
+                var args = Array.prototype.slice.call(arguments);
+                if (args[0]) {
+                    args[0] = this.prependPayload(args[0]);
+                }
+
+                hybridsocket.constructor.prototype.handshakeResponse.apply(hybridsocket, args);
             }
         }
 
