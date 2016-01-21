@@ -299,15 +299,19 @@
 })('object' === typeof module ? (module.exports.Protocol = {}) : (this.Protocol = {}), this);
 
 (function (exports, GLOBAL) {
+    exports.io = require("socket.io-client");
+}('object' === typeof module ? module.exports : window, this));
+
+(function (exports, GLOBAL) {
     function pomelo() {
 
     }
 
-    var root = exports;
-    root.pomelo = pomelo;
+    exports.pomelo = pomelo;
 
-    var OF = function() {};
-    OF.prototype = root.EventEmitter.prototype;
+    var OF = function () {
+    };
+    OF.prototype = exports.EventEmitter.prototype;
     pomelo.prototype = new OF();
 
     pomelo.prototype.init = function (params, cb, errorCb) {
@@ -328,7 +332,7 @@
             url += ':' + port;
         }
 
-        self.socket = io.connect(url, {'force new connection': true, reconnect: true});
+        self.socket = exports.io.connect(url, {'force new connection': true, reconnect: true});
 
         self.socket.on('connect', function () {
             console.log('[pomeloclient.init] websocket connected!');
@@ -355,6 +359,7 @@
 
         self.socket.on('error', function (err) {
             console.log(err);
+
             if (errorCb) {
                 errorCb(err);
             }
@@ -364,6 +369,14 @@
             self.emit('disconnect', reason);
         });
     };
+
+    pomelo.prototype.onSendFailure = function (id, err) {
+        var self = this;
+
+        var cb = self.callbacks[id];
+        delete self.callbacks[id];
+        cb && cb({code: 500, msg: err});
+    }
 
     pomelo.prototype.disconnect = function () {
         if (this.socket) {
@@ -376,6 +389,7 @@
         if (!route) {
             return;
         }
+        var self = this;
         var msg = {};
         var cb;
         arguments = Array.prototype.slice.apply(arguments);
@@ -391,15 +405,23 @@
         }
 
         if (route.indexOf('area.') === 0) {
-            msg.areaId = this.areaId;
+            msg.areaId = self.areaId;
         }
 
         msg.timestamp = Date.now();
 
-        this.id++;
-        this.callbacks[this.id] = cb;
-        var sg = root.Protocol.encode(this.id, route, msg);
-        this.socket.send(sg);
+        self.id++;
+        var id = self.id;
+        self.callbacks[id] = cb;
+
+        var sg = exports.Protocol.encode(id, route, msg);
+        self.socket.send(sg, function (err) {
+            if (!!err) {
+                var errMsg = "Write timeout";
+                if (err) errMsg += " due to " + err;
+                self.onSendFailure(id, errMsg);
+            }
+        });
     };
 
     pomelo.prototype.notify = function (route, msg) {
@@ -449,4 +471,5 @@
             processMessage(pomelo, msgs[i]);
         }
     };
+
 })('object' === typeof module ? module.exports : window, this);

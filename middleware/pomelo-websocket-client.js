@@ -229,11 +229,13 @@
 }('object' === typeof module ? module.exports : window, this));
 
 (function (exports, GLOBAL) {
+    exports.WebSocket = require('ws');
+}('object' === typeof module ? module.exports : window, this));
+
+(function (exports, GLOBAL) {
     var Protocol = exports.Protocol;
     var Package = Protocol.Package;
     var Message = Protocol.Message;
-    var decodeIO_encoder = null;
-    var decodeIO_decoder = null;
     var JS_WS_CLIENT_TYPE = 'js-websocket';
     var JS_WS_CLIENT_VERSION = '0.0.1';
     var DEFAULT_MAX_RECONNECT_ATTEMPTS = 10;
@@ -246,12 +248,11 @@
 
     }
 
-    var root = exports;
-    root.pomelo = pomelo;
+    exports.pomelo = pomelo;
 
     var OF = function () {
     };
-    OF.prototype = root.EventEmitter.prototype;
+    OF.prototype = exports.EventEmitter.prototype;
     pomelo.prototype = new OF();
 
     pomelo.prototype.init = function (params, cb, errorCb) {
@@ -306,20 +307,24 @@
     pomelo.prototype.connect = function () {
         var self = this;
 
-        self.socket = new WebSocket(self.url, ['ws'], {binary: true});
+        self.socket = new exports.WebSocket(self.url, ['ws'], {binary: true});
 
         self.socket.on('open', function () {
             console.log('[pomeloclient.init] websocket connected!');
 
-            if (!!self.reconnect) {
-                self.emit('reconnect');
-            }
             self.reset();
             if (self.socket) {
                 self.socket.send(Package.encode(Package.TYPE_HANDSHAKE, Protocol.strencode(JSON.stringify(self.handshakeBuffer))), {binary: true}, function (err) {
                     if (!!err) {
                         console.log('websocket send handshake data failed: %j', err.stack);
-                        return;
+                        self.disconnect();
+                        self.doReconnect(err);
+                    } else {
+                        if (!!self.reconnect) {
+                            self.emit('reconnect');
+                        } else {
+                            self.emit('connect');
+                        }
                     }
                 });
             }
@@ -346,10 +351,7 @@
         self.socket.on('error', function (err) {
             console.log(err);
 
-            if (!self.doReconnect()) {
-                self.errorCallback && self.errorCallback(err);
-                self.errorCallback = null;
-            }
+            self.doReconnect(err)
         });
 
         self.socket.on('close', function () {
@@ -359,7 +361,7 @@
         });
     }
 
-    pomelo.prototype.doReconnect = function () {
+    pomelo.prototype.doReconnect = function (err) {
         var self = this;
 
         if (self.reconnectAttempts < self.maxReconnectAttempts) {
@@ -371,7 +373,31 @@
             self.reconnectionDelay *= 2;
 
             return true;
+        } else {
+            self.onConnectFailure(err);
         }
+    }
+
+    pomelo.prototype.onConnectFailure = function (err) {
+        var self = this;
+
+        err = err || "Connect failure.";
+        if (self.errorCallback) {
+            self.errorCallback(err);
+            self.errorCallback = null;
+        }
+        self.initCallback = null;
+
+        self.disconnect();
+        self.emit('error', err);
+    }
+
+    pomelo.prototype.onSendFailure = function (id, err) {
+        var self = this;
+
+        var cb = self.callbacks[id];
+        delete self.callbacks[id];
+        cb && cb({code: 500, msg: err});
     }
 
     pomelo.prototype.disconnect = function () {
@@ -433,7 +459,7 @@
         self.socket.send(Package.encode(Package.TYPE_DATA, msg), {binary: true}, function (err) {
             if (!!err) {
                 console.log('websocket send binary data failed: %j', err.stack);
-                return;
+                self.onSendFailure(reqId, err);
             }
         });
     }
@@ -521,16 +547,16 @@
 
         data = JSON.parse(Protocol.strdecode(data));
         if (data.code === RES_OLD_CLIENT) {
-            self.emit('error', 'client version not fullfill');
-            self.errorCallback && self.errorCallback('handshake fail');
-            self.errorCallback = null;
+            var err = 'client version not fullfill';
+            self.emit('error', err);
+            self.onConnectFailure(err);
             return;
         }
 
         if (data.code !== RES_OK) {
-            self.emit('error', 'handshake fail');
-            self.errorCallback && self.errorCallback('handshake fail');
-            self.errorCallback = null;
+            var err = 'handshake fail';
+            self.emit('error', err);
+            self.onConnectFailure(err);
             return;
         }
 
@@ -539,13 +565,13 @@
         self.socket.send(Package.encode(Package.TYPE_HANDSHAKE_ACK), {binary: true}, function (err) {
             if (!!err) {
                 console.log('websocket send handshake ack data failed: %j', err.stack);
-                self.errorCallback && self.errorCallback('websocket send handshake ack data failed');
-                self.errorCallback = null;
+                self.onConnectFailure('websocket send handshake ack data failed');
             } else {
                 if (self.initCallback) {
                     self.initCallback(self.socket);
                     self.initCallback = null;
                 }
+                self.errorCallback = null;
             }
         });
     };
@@ -558,9 +584,10 @@
             if (gap > gapThreshold) {
                 self.heartbeatTimeoutId = setTimeout(heartbeatTimeoutCb, gap);
             } else {
+                var err = "heartbeat timeout";
                 console.error('server heartbeat timeout');
-                self.emit('heartbeat timeout');
                 self.disconnect();
+                self.doReconnect(err);
             }
         };
 
@@ -585,7 +612,8 @@
                 self.socket.send(Package.encode(Package.TYPE_HEARTBEAT), {binary: true}, function (err) {
                     if (!!err) {
                         console.log('websocket send heartbeat data failed: %j', err.stack);
-                        return;
+                        self.disconnect();
+                        self.doReconnect(err);
                     }
                 });
             }
@@ -604,7 +632,7 @@
         this.emit('onKick');
     };
 
-    var processMessage = function (pomelo, msg) {
+    function processMessage(pomelo, msg) {
         var route;
         if (msg.id) {
             //if have a id then find the callback function with the request
@@ -642,7 +670,7 @@
         }
     };
 
-    var processMessageBatch = function (pomelo, msgs) {
+    function processMessageBatch(pomelo, msgs) {
         for (var i = 0, l = msgs.length; i < l; i++) {
             processMessage(pomelo, msgs[i]);
         }
