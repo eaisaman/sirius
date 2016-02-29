@@ -222,7 +222,7 @@
         }
         return this._events[type];
     }
-})('object' === typeof module ? module.exports : window, this);
+})('object' === typeof module ? module.exports : this, this);
 
 (function (exports, GLOBAL) {
 
@@ -299,8 +299,8 @@
 })('object' === typeof module ? (module.exports.Protocol = {}) : (this.Protocol = {}), this);
 
 (function (exports, GLOBAL) {
-    exports.io = require("socket.io-client");
-}('object' === typeof module ? module.exports : window, this));
+    exports.io = exports.io || require("socket.io-client");
+}('object' === typeof module ? module.exports : this, this));
 
 (function (exports, GLOBAL) {
     function pomelo() {
@@ -472,4 +472,4 @@
         }
     };
 
-})('object' === typeof module ? module.exports : window, this);
+})('object' === typeof module ? module.exports : this, this);
