@@ -528,20 +528,24 @@ Handler.prototype.invite = function (msg, session, next) {
                         return item;
                     });
 
-                    self.channelService.pushMessageByUids(
-                        route,
-                        {
-                            userId: userId,
-                            signal: self.app.get("inviteSignal"),
-                            payload: {}
-                        },
-                        records,
-                        function (err, failIds) {
-                            failIds && failIds.length && logger.error("chatHandler.invite:Publish fail id:%s", failIds.toString());
+                    if (records.length) {
+                        self.channelService.pushMessageByUids(
+                            route,
+                            {
+                                userId: userId,
+                                signal: self.app.get("inviteSignal"),
+                                payload: {}
+                            },
+                            records,
+                            function (err, failIds) {
+                                failIds && failIds.length && logger.error("chatHandler.invite:Publish fail id:%s", failIds.toString());
 
-                            callback(err);
-                        }
-                    );
+                                callback(err);
+                            }
+                        );
+                    } else {
+                        callback(null);
+                    }
                 }
             ], function (err) {
                 if (err) {
@@ -968,21 +972,25 @@ Handler.prototype.inviteChat = function (msg, session, next) {
                                 return item;
                             });
 
-                            self.channelService.pushMessageByUids(
-                                route,
-                                {
-                                    chatId: chatId,
-                                    userId: userId,
-                                    signal: self.app.get("chatInviteSignal"),
-                                    chatState: self.getChatState(chatId)
-                                },
-                                records,
-                                function (err, failIds) {
-                                    failIds && failIds.length && logger.error("chatHandler.inviteChat:Publish fail id:%s", failIds.toString());
+                            if (records.length) {
+                                self.channelService.pushMessageByUids(
+                                    route,
+                                    {
+                                        chatId: chatId,
+                                        userId: userId,
+                                        signal: self.app.get("chatInviteSignal"),
+                                        chatState: self.getChatState(chatId)
+                                    },
+                                    records,
+                                    function (err, failIds) {
+                                        failIds && failIds.length && logger.error("chatHandler.inviteChat:Publish fail id:%s", failIds.toString());
 
-                                    callback(err);
-                                }
-                            );
+                                        callback(err);
+                                    }
+                                );
+                            } else {
+                                callback(null);
+                            }
                         }
                     ], function (err) {
                         if (err) {
@@ -1121,7 +1129,7 @@ Handler.prototype.closeChat = function (msg, session, next) {
                 next(null, {code: 500, msg: 'chatHandler.closeChat:Client not belongs to chat.'});
             }
         } else {
-            next(null, {code: 500, msg: 'chatHandler.closeChat:Chat not found.'});
+            next(null, {code: 200, msg: 'chatHandler.closeChat:Chat not found.'});
         }
     } else {
         next(null, {code: 500, msg: 'chatHandler.closeChat:Parameter userId or chatId is empty.'});
@@ -1526,20 +1534,24 @@ Handler.prototype.pushSingle = function (msg, session, next) {
                         return item;
                     });
 
-                    self.channelService.pushMessageByUids(
-                        route,
-                        {
-                            userId: userId,
-                            signal: self.app.get("messageSignal"),
-                            payload: msg.payload
-                        },
-                        records,
-                        function (err, failIds) {
-                            failIds && failIds.length && logger.error("chatHandler.pushSingle:Publish fail id:%s", failIds.toString());
+                    if (records.length) {
+                        self.channelService.pushMessageByUids(
+                            route,
+                            {
+                                userId: userId,
+                                signal: self.app.get("messageSignal"),
+                                payload: msg.payload
+                            },
+                            records,
+                            function (err, failIds) {
+                                failIds && failIds.length && logger.error("chatHandler.pushSingle:Publish fail id:%s", failIds.toString());
 
-                            callback(err);
-                        }
-                    );
+                                callback(err);
+                            }
+                        );
+                    } else {
+                        callback(null);
+                    }
                 }
             ], function (err) {
                 if (err) {
