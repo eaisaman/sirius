@@ -222,15 +222,15 @@
         }
         return this._events[type];
     }
-})('object' === typeof module ? module.exports : window, this);
+})('object' === typeof module ? module.exports : this, this);
 
 (function (exports, GLOBAL) {
     exports.Protocol = exports.Protocol || require('pomelo-protocol');
-}('object' === typeof module ? module.exports : window, this));
+}('object' === typeof module ? module.exports : this, this));
 
 (function (exports, GLOBAL) {
     exports.WebSocket = require('ws');
-}('object' === typeof module ? module.exports : window, this));
+}('object' === typeof module ? module.exports : this, this));
 
 (function (exports, GLOBAL) {
     var Protocol = exports.Protocol;
@@ -270,7 +270,7 @@
         self.reconnectAttempts = 0;
         self.reconnectionDelay = 5000;
         self.reconnect = false;
-        self.reconncetTimer = null;
+        self.reconnectTimer = null;
         self.maxReconnectAttempts = params.maxReconnectAttempts || DEFAULT_MAX_RECONNECT_ATTEMPTS;
         self.heartbeatInterval = 0;
         self.heartbeatTimeout = 0;
@@ -290,6 +290,7 @@
         self.handlers[Package.TYPE_HEARTBEAT] = self.heartbeat.bind(self);
         self.handlers[Package.TYPE_DATA] = self.onMessage.bind(self);
         self.handlers[Package.TYPE_KICK] = self.onKick.bind(self);
+        self.isCancelled = false;
 
         var host = params.host;
         var port = params.port;
@@ -357,7 +358,8 @@
         self.socket.on('close', function () {
             self.emit('disconnect');
 
-            self.doReconnect();
+            if (!self.isCancelled)
+                self.doReconnect();
         });
     }
 
@@ -367,7 +369,7 @@
         if (self.reconnectAttempts < self.maxReconnectAttempts) {
             self.reconnect = true;
             self.reconnectAttempts++;
-            self.reconncetTimer = setTimeout(function () {
+            self.reconnectTimer = setTimeout(function () {
                 self.connect();
             }, self.reconnectionDelay);
             self.reconnectionDelay *= 2;
@@ -417,6 +419,11 @@
             this.socket = null;
         }
     };
+
+    pomelo.prototype.cancel = function () {
+        this.isCancelled = true;
+        this.disconnect();
+    }
 
     pomelo.prototype.request = function (route) {
         if (!route) {
@@ -516,7 +523,7 @@
         self.reconnect = false;
         self.reconnectionDelay = 1000 * 5;
         self.reconnectAttempts = 0;
-        self.reconncetTimer && clearTimeout(self.reconncetTimer);
+        self.reconnectTimer && clearTimeout(self.reconnectTimer);
     };
 
     pomelo.prototype.handshake = function (data) {
@@ -547,7 +554,7 @@
 
         data = JSON.parse(Protocol.strdecode(data));
         if (data.code === RES_OLD_CLIENT) {
-            var err = 'client version not fullfill';
+            var err = 'client version not fulfill';
             self.emit('error', err);
             self.onConnectFailure(err);
             return;
@@ -675,4 +682,4 @@
             processMessage(pomelo, msgs[i]);
         }
     };
-})('object' === typeof module ? module.exports : window, this);
+})('object' === typeof module ? module.exports : this, this);
