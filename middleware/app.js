@@ -74,37 +74,46 @@ app.configure('production|development', 'all', function () {
                 socket.addListener("message", function (msg) {
                     var args = Array.prototype.slice.call(arguments);
 
-                    var session = sessionService.get(hybridsocket.id),
-                        clientConfig = session.get("clientConfig");
+                    var session = sessionService.get(hybridsocket.id);
 
-                    if (!clientConfig) {
-                        clientConfig = {};
-                        session.set("clientConfig", clientConfig);
-                    }
+                    if (session) {
+                        var clientConfig = session.get("clientConfig");
+                        if (!clientConfig) {
+                            clientConfig = {};
+                            session.set("clientConfig", clientConfig);
+                        }
 
-                    if (clientConfig.payloadStart == null) {
-                        if (args[0]) {
-                            //decode, test the payload start location
-                            var offset;
-                            for (var i = 0; i < 10; i++) {
-                                if (i + 3 < msg.length) {
-                                    var type = msg[i];
-                                    var length = ((msg[i + 1]) << 16 | (msg[i + 2]) << 8 | msg[i + 3]) >>> 0;
-                                    if (length == msg.length - i - 4) {
-                                        offset = i;
-                                        break;
+                        if (clientConfig.payloadStart == null) {
+                            if (args[0]) {
+                                //decode, test the payload start location
+                                var offset;
+                                for (var i = 0; i < 10; i++) {
+                                    if (i + 3 < msg.length) {
+                                        var type = msg[i];
+                                        var length = (msg[i + 1]) << 16 | (msg[i + 2]) << 8 | msg[i + 3];
+                                        if (length == msg.length - i - 4) {
+                                            offset = i;
+                                            break;
+                                        }
                                     }
                                 }
+                                if (offset != null) {
+                                    clientConfig.payloadStart = offset;
+                                    if (offset) clientConfig.payloadAhead = msg.slice(0, offset);
+                                    args[0] = msg.slice(offset);
+                                } else {
+                                    args[0] = null;
+                                }
+                                if (args[1]) args[1].buffer = args[0];
                             }
-                            clientConfig.payloadStart = offset;
                         }
-                    }
 
-                    if (clientConfig.payloadStart != null) {
-                        if (clientConfig.payloadStart) clientConfig.payloadAhead = msg.slice(0, clientConfig.payloadStart);
-                        args[0] = msg.slice(clientConfig.payloadStart);
-                    } else {
-                        args[0] = null;
+                        if (clientConfig.payloadStart != null) {
+                            if (clientConfig.payloadStart) clientConfig.payloadAhead = msg.slice(0, clientConfig.payloadStart);
+                            args[0] = msg.slice(clientConfig.payloadStart);
+                        } else {
+                            args[0] = null;
+                        }
                     }
                     if (args[1]) args[1].buffer = args[0];
 
@@ -120,11 +129,14 @@ app.configure('production|development', 'all', function () {
                     msg = new Buffer(JSON.stringify(msg));
                 }
 
-                var session = sessionService.get(this.id),
-                    clientConfig = session.get("clientConfig");
+                var session = sessionService.get(this.id);
 
-                if (clientConfig && clientConfig.payloadStart) {
-                    msg = Buffer.concat([clientConfig.payloadAhead, msg]);
+                if (session) {
+                    var clientConfig = session.get("clientConfig");
+
+                    if (clientConfig && clientConfig.payloadStart) {
+                        msg = Buffer.concat([clientConfig.payloadAhead, msg]);
+                    }
                 }
 
                 return msg;
