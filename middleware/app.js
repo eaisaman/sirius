@@ -5,7 +5,12 @@ var pomelo = require('pomelo');
  * Init app for client.
  */
 var app = pomelo.createApp();
+app.set('util', require('app/common/util'));
+
 app.set('name', 'sirius');
+
+app.set('chatCreatorSalt', 'd21xMzQ6Kg==');
+app.set('chatSalt', {});
 
 app.set('chatRoute', 'SIRIUS_CHAT_ROUTE');
 app.set('loginChannel', 'SIRIUS_LOGIN_CHANNEL');

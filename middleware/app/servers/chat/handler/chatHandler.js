@@ -25,6 +25,7 @@ var Handler = function (app) {
 
     self.app = app;
     self.channelService = app.get('channelService');
+    self.util = app.get('util');
 
     self.getChatCreator = function (chatId) {
         var channel = self.channelService.getChannel(chatId, false);
@@ -57,7 +58,7 @@ var Handler = function (app) {
 
         if (channel) {
             if (userId) {
-                var arr = arrayPick(_.where(_.values(channel.records), {memberType: this.app.get("userMemberType")}), "uid", "sid");
+                var arr = arrayPick(_.where(_.values(channel.records), {memberType: self.app.get("userMemberType")}), "uid", "sid");
 
                 if (typeof userId === "string") {
                     var ret = [];
@@ -93,7 +94,7 @@ var Handler = function (app) {
                     return ret;
                 }
             } else if (userId === undefined) {
-                return arrayPick(_.where(_.values(channel.records), {memberType: this.app.get("userMemberType")}), "uid", "sid");
+                return arrayPick(_.where(_.values(channel.records), {memberType: self.app.get("userMemberType")}), "uid", "sid");
             }
         }
 
@@ -104,7 +105,7 @@ var Handler = function (app) {
         var channel = self.channelService.getChannel(channelId, false);
 
         if (channel) {
-            var arr = arrayPick(_.where(_.values(channel.records), {memberType: this.app.get("userMemberType")}), "uid", "sid");
+            var arr = arrayPick(_.where(_.values(channel.records), {memberType: self.app.get("userMemberType")}), "uid", "sid");
 
             if (typeof userId === "string") {
                 return _.reject(arr, function (item) {
@@ -218,6 +219,10 @@ var Handler = function (app) {
                 }
 
                 if (uids.length) {
+                    if (channel.getUserAmount() == 0) {
+                        self.channelService.destroyChannel(channel);
+                    }
+
                     self.channelService.pushMessageByUids(
                         route,
                         {
@@ -255,6 +260,10 @@ var Handler = function (app) {
                 }
             }
         }
+    }
+
+    self.getEncryptedChatId = function (chatId) {
+        return self.app.get("chatSalt")[chatId] = self.app.get("chatSalt")[chatId] || self.util.encrypt(chatId, self.app.get("chatCreatorSalt"));
     }
 };
 
@@ -313,9 +322,9 @@ Handler.prototype.subscribe = function (msg, session, next) {
  * @return {Void}
  */
 Handler.prototype.connect = function (msg, session, next) {
-    var self = this, userId = msg.userId, chatId = this.parseJSON(msg.chatId), deviceId = msg.deviceId, sid = this.app.get("serverId"), loginChannel = msg.loginChannel || this.app.get("loginChannel"), route = msg.route || this.app.get("chatRoute");
+    var self = this, userId = msg.userId, chatId = self.parseJSON(msg.chatId), deviceId = msg.deviceId, sid = self.app.get("serverId"), loginChannel = msg.loginChannel || self.app.get("loginChannel"), route = msg.route || self.app.get("chatRoute");
     if (userId && deviceId) {
-        var channel = this.channelService.getChannel(loginChannel, true);
+        var channel = self.channelService.getChannel(loginChannel, true);
         if (channel) {
             var arr = [];
             arr.push(function (cb) {
@@ -409,10 +418,10 @@ Handler.prototype.connect = function (msg, session, next) {
  * @return {Void}
  */
 Handler.prototype.disconnect = function (msg, session, next) {
-    var self = this, userId = msg.userId, chatId = this.parseJSON(msg.chatId), loginChannel = msg.loginChannel || this.app.get("loginChannel"), route = msg.route || this.app.get("chatRoute");
+    var self = this, userId = msg.userId, chatId = self.parseJSON(msg.chatId), loginChannel = msg.loginChannel || self.app.get("loginChannel"), route = msg.route || self.app.get("chatRoute");
 
     if (userId) {
-        var arr = [], channel = this.channelService.getChannel(loginChannel, false);
+        var arr = [], channel = self.channelService.getChannel(loginChannel, false);
         if (channel) {
             var record = channel.getMember(userId);
             if (record)
@@ -489,7 +498,7 @@ Handler.prototype.disconnect = function (msg, session, next) {
  * @return {Void}
  */
 Handler.prototype.invite = function (msg, session, next) {
-    var self = this, userId = msg.userId, uids = this.parseJSON(msg.uids), route = msg.route || this.app.get("chatRoute");
+    var self = this, userId = msg.userId, uids = self.parseJSON(msg.uids), route = msg.route || self.app.get("chatRoute");
     if (userId) {
         if (uids && uids.length) {
             var arr = [];
@@ -538,9 +547,14 @@ Handler.prototype.invite = function (msg, session, next) {
                             },
                             records,
                             function (err, failIds) {
-                                failIds && failIds.length && logger.error("chatHandler.invite:Publish fail id:%s", failIds.toString());
+                                if (err) {
+                                    logger.error('chatHandler.invite:' + err.toString());
+                                } else {
+                                    failIds && failIds.length && logger.error("chatHandler.invite:Publish fail id:%s", failIds.toString());
+                                }
 
-                                callback(err);
+
+                                callback(null);
                             }
                         );
                     } else {
@@ -575,32 +589,29 @@ Handler.prototype.invite = function (msg, session, next) {
  * @return {Void}
  */
 Handler.prototype.acceptInvitation = function (msg, session, next) {
-    var userId = msg.userId, creatorId = msg.creatorId, creatorLoginChannel = msg.creatorLoginChannel, route = msg.route || this.app.get("chatRoute");
+    var self = this, userId = msg.userId, creatorId = msg.creatorId, creatorLoginChannel = msg.creatorLoginChannel, route = msg.route || self.app.get("chatRoute");
     if (userId && creatorId && creatorLoginChannel) {
-        var channel = this.channelService.getChannel(creatorLoginChannel, false);
+        var channel = self.channelService.getChannel(creatorLoginChannel, false);
 
         if (channel) {
             var record = channel.getMember(creatorId);
 
             if (record) {
-                this.channelService.pushMessageByUids(
+                self.channelService.pushMessageByUids(
                     route,
                     {
                         userId: userId,
-                        signal: this.app.get("acceptSignal"),
+                        signal: self.app.get("acceptSignal"),
                         payload: {}
                     },
                     [record],
                     function (err, failIds) {
                         if (err) {
                             logger.error('chatHandler.acceptInvitation:' + err.toString());
-
-                            next(null, {code: 500, msg: 'chatHandler.acceptInvitation:' + err.toString()});
                         } else {
                             failIds && failIds.length && logger.error("chatHandler.acceptInvitation:Publish fail id:%s", failIds.toString());
-
-                            next(null, {code: 200, msg: {}});
                         }
+                        next(null, {code: 200, msg: {}});
                     }
                 );
             } else {
@@ -621,7 +632,8 @@ Handler.prototype.acceptInvitation = function (msg, session, next) {
  *
  * Create chat, add creator. The chat state will be saved in the record of creator. All other clients' record
  * will be cleaned if his session closed except for the creator's record. It will be populated to a new record
- * if the creator reconnects to the chat.
+ * if the creator reconnects to the chat. Result contains encrypted chatId so that app knows when the creator reconnect
+ * to chat.
  *
  * @param msg{object} Msg contains userId, chatId, deviceId, route(optional)
  * @param session{object}
@@ -629,9 +641,9 @@ Handler.prototype.acceptInvitation = function (msg, session, next) {
  * @return {Void}
  */
 Handler.prototype.createChat = function (msg, session, next) {
-    var self = this, userId = msg.userId, chatId = msg.chatId, deviceId = msg.deviceId, sid = this.app.get("serverId"), route = msg.route || this.app.get("chatRoute");
+    var self = this, userId = msg.userId, chatId = msg.chatId, deviceId = msg.deviceId, sid = self.app.get("serverId"), route = msg.route || self.app.get("chatRoute");
     if (userId && chatId && deviceId && sid) {
-        var channel = this.channelService.getChannel(chatId, true),
+        var channel = self.channelService.getChannel(chatId, true),
             record = channel.getMember(userId);
         if (record) {
             channel.leave(record.uid, record.sid);
@@ -639,11 +651,15 @@ Handler.prototype.createChat = function (msg, session, next) {
         channel.add(userId, sid);
         record = channel.getMember(userId);
         record.deviceId = msg.deviceId;
-        record.memberType = this.app.get("userMemberType");
-        record.category = this.app.get("creatorCategory");
-        record.chatState = this.app.get("chatOpenState");
+        record.memberType = self.app.get("userMemberType");
+        record.category = self.app.get("creatorCategory");
+        record.chatState = self.app.get("chatOpenState");
 
-        next(null, {code: 200, msg: {}});
+        next(null, {
+            code: 200, msg: {
+                enc: self.getEncryptedChatId(chatId)
+            }
+        });
     } else {
         next(null, {code: 500, msg: 'chatHandler.create:Parameter is empty.'});
     }
@@ -655,71 +671,77 @@ Handler.prototype.createChat = function (msg, session, next) {
  * Add client to channel, publish client connect signal to all other clients. The chat state will be returned too.
  * If creator reconnects, the old record will be populated to the new one.
  *
- * @param msg{object} Msg contains userId, chatId, deviceId, route(optional)
+ * @param msg{object} Msg contains userId, chatId, deviceId, route(optional), pushFlag(optional, not push if 0, push if 1 or undefined)
  * @param session{object}
  * @param next{function}
  * @return {Void}
  */
 Handler.prototype.connectChat = function (msg, session, next) {
-    var self = this, userId = msg.userId, chatId = msg.chatId, deviceId = msg.deviceId, sid = this.app.get("serverId"), route = msg.route || this.app.get("chatRoute");
+    var self = this, userId = msg.userId, chatId = msg.chatId, enc = msg.enc, deviceId = msg.deviceId, pushFlag = msg.pushFlag, sid = self.app.get("serverId"), route = msg.route || self.app.get("chatRoute");
     if (userId && chatId && deviceId && sid) {
-        var channel = this.channelService.getChannel(chatId, false);
-        if (channel) {
-            var chatState,
-                record = channel.getMember(userId),
-                category = this.app.get("guestCategory"),
-                memberType = this.app.get("userMemberType");
-            if (record) {
-                category = record.category;
-                memberType = record.memberType;
-                chatState = record.chatState;
-                if (record.deviceId !== deviceId) {
-                    channel.leave(record.uid, record.sid);
-                    record = null;
-                }
-            }
-
-            var uids = this.getOtherClientIds(chatId, userId);
-
-            if (!record) {
+        var channel = self.channelService.getChannel(chatId, false);
+        if (!channel) {
+            channel = self.channelService.getChannel(chatId, true);
+            if (enc == self.getEncryptedChatId(chatId)) {
+                //Only the creator holds the encrypted chatId
                 channel.add(userId, sid);
-                record = channel.getMember(userId);
-                record.deviceId = deviceId;
-                record.memberType = memberType;
-                record.category = category;
-                if (chatState != null) record.chatState = chatState;
+                var creatorRecord = channel.getMember(userId);
+                creatorRecord.deviceId = deviceId;
+                creatorRecord.memberType = self.app.get("userMemberType");
+                creatorRecord.category = self.app.get("creatorCategory");
+                creatorRecord.chatState = self.app.get("chatOpenState");
             }
+            ;
+        }
 
-            if (uids && uids.length) {
-                self.channelService.pushMessageByUids(
-                    route,
-                    {
-                        chatId: chatId,
-                        signal: self.app.get("chatConnectSignal"),
-                        userId: userId,
-                        chatState: chatState
-                    },
-                    uids,
-                    function (err, failIds) {
-                        if (err) {
-                            logger.error('chatHandler.connectChat:' + err.toString());
+        var chatState,
+            record = channel.getMember(userId),
+            category = self.app.get("guestCategory"),
+            memberType = self.app.get("userMemberType");
+        if (record) {
+            category = record.category;
+            memberType = record.memberType;
+            chatState = record.chatState;
+            if (record.deviceId !== deviceId) {
+                channel.leave(record.uid, record.sid);
+                record = null;
+            }
+        }
 
-                            next(null, {code: 500, msg: 'chatHandler.connectChat:' + err.toString()});
-                        } else {
-                            failIds && failIds.length && logger.error("chatHandler.connectChat:Publish fail id:%s", failIds.toString());
+        var uids = self.getOtherClientIds(chatId, userId);
 
-                            next(null, {
-                                code: 200,
-                                msg: {}
-                            });
-                        }
+        if (!record) {
+            channel.add(userId, sid);
+            record = channel.getMember(userId);
+            record.deviceId = deviceId;
+            record.memberType = memberType;
+            record.category = category;
+            if (chatState != null) record.chatState = chatState;
+        }
+
+        if ((pushFlag == null || pushFlag == 0) && uids && uids.length) {
+            self.channelService.pushMessageByUids(
+                route,
+                {
+                    chatId: chatId,
+                    signal: self.app.get("chatConnectSignal"),
+                    userId: userId,
+                    chatState: chatState
+                },
+                uids,
+                function (err, failIds) {
+                    if (err) {
+                        logger.error('chatHandler.connectChat:' + err.toString());
+                    } else {
+                        failIds && failIds.length && logger.error("chatHandler.connectChat:Publish fail id:%s", failIds.toString());
                     }
-                );
-            } else {
-                next(null, {code: 200, msg: {}});
-            }
+
+                    next(null, {code: 200, msg: {}});
+
+                }
+            );
         } else {
-            next(null, {code: 500, msg: 'chatHandler.connectChat:Chat not found.'});
+            next(null, {code: 200, msg: {}});
         }
     } else {
         next(null, {code: 500, msg: 'chatHandler.connectChat:Parameter is empty.'});
@@ -737,7 +759,7 @@ Handler.prototype.connectChat = function (msg, session, next) {
  * @return {Void}
  */
 Handler.prototype.disconnectChat = function (msg, session, next) {
-    var self = this, userId = msg.userId, chatId = this.parseJSON(msg.chatId), route = msg.route || this.app.get("chatRoute");
+    var self = this, userId = msg.userId, chatId = self.parseJSON(msg.chatId), route = msg.route || self.app.get("chatRoute");
 
     if (userId && chatId && chatId.length) {
         var arr = [];
@@ -804,40 +826,35 @@ Handler.prototype.disconnectChat = function (msg, session, next) {
  * @return {Void}
  */
 Handler.prototype.pauseChat = function (msg, session, next) {
-    var userId = msg.userId, chatId = msg.chatId, route = msg.route || this.app.get("chatRoute");
+    var self = this, userId = msg.userId, chatId = msg.chatId, route = msg.route || self.app.get("chatRoute");
     if (userId && chatId) {
-        var channel = this.channelService.getChannel(chatId, false);
+        var channel = self.channelService.getChannel(chatId, false);
         if (channel) {
             var record = channel.getMember(userId);
             if (record) {
-                if (record.category === this.app.get("creatorCategory")) {
-                    record.chatState = this.app.get("chatPauseState");
+                if (record.category === self.app.get("creatorCategory")) {
+                    record.chatState = self.app.get("chatPauseState");
 
-                    var uids = this.getOtherClientIds(chatId, userId);
+                    var uids = self.getOtherClientIds(chatId, userId);
 
                     if (uids && uids.length) {
-                        this.channelService.pushMessageByUids(
+                        self.channelService.pushMessageByUids(
                             route,
                             {
                                 chatId: chatId,
-                                signal: this.app.get("chatPauseSignal"),
+                                signal: self.app.get("chatPauseSignal"),
                                 userId: userId,
-                                chatState: this.app.get("chatPauseState")
+                                chatState: self.app.get("chatPauseState")
                             },
                             uids,
                             function (err, failIds) {
                                 if (err) {
                                     logger.error('chatHandler.pauseChat:' + err.toString());
-
-                                    next(null, {code: 500, msg: 'chatHandler.pauseChat:' + err.toString()});
                                 } else {
                                     failIds && failIds.length && logger.error("chatHandler.pauseChat:Publish fail id:%s", failIds.toString());
-
-                                    next(null, {
-                                        code: 200,
-                                        msg: {}
-                                    });
                                 }
+
+                                next(null, {code: 200, msg: {}});
                             }
                         );
                     } else {
@@ -850,7 +867,8 @@ Handler.prototype.pauseChat = function (msg, session, next) {
                 next(null, {code: 500, msg: 'chatHandler.pauseChat:Client not belongs to the chat.'});
             }
         } else {
-            next(null, {code: 500, msg: 'chatHandler.pauseChat:Chat not found.'});
+            logger.warn('chatHandler.pauseChat:Chat not found:%s', chatId);
+            next(null, {code: 200, msg: 'chatHandler.pauseChat:Chat not found.'});
         }
     } else {
         next(null, {code: 500, msg: 'chatHandler.pauseChat:Parameter userId or chatId is empty.'});
@@ -868,37 +886,34 @@ Handler.prototype.pauseChat = function (msg, session, next) {
  * @return {Void}
  */
 Handler.prototype.resumeChat = function (msg, session, next) {
-    var userId = msg.userId, chatId = msg.chatId, route = msg.route || this.app.get("chatRoute");
+    var self = this, userId = msg.userId, chatId = msg.chatId, route = msg.route || self.app.get("chatRoute");
     if (userId && chatId) {
-        var channel = this.channelService.getChannel(chatId, false);
+        var channel = self.channelService.getChannel(chatId, false);
         if (channel) {
             var record = channel.getMember(userId);
             if (record) {
-                if (record.category === this.app.get("creatorCategory")) {
-                    record.chatState = this.app.get("chatOpenState");
+                if (record.category === self.app.get("creatorCategory")) {
+                    record.chatState = self.app.get("chatOpenState");
 
-                    var uids = this.getOtherClientIds(chatId, userId);
+                    var uids = self.getOtherClientIds(chatId, userId);
 
                     if (uids && uids.length) {
-                        this.channelService.pushMessageByUids(
+                        self.channelService.pushMessageByUids(
                             route,
                             {
                                 chatId: chatId,
                                 userId: userId,
-                                signal: this.app.get("chatResumeSignal"),
-                                chatState: this.app.get("chatOpenState")
+                                signal: self.app.get("chatResumeSignal"),
+                                chatState: self.app.get("chatOpenState")
                             },
                             uids,
                             function (err, failIds) {
                                 if (err) {
                                     logger.error('chatHandler.resumeChat:' + err.toString());
-
-                                    next(null, {code: 500, msg: 'chatHandler.resumeChat:' + err.toString()});
                                 } else {
                                     failIds && failIds.length && logger.error("chatHandler.resumeChat:Publish fail id:%s", failIds.toString());
-
-                                    next(null, {code: 200, msg: {}});
                                 }
+                                next(null, {code: 200, msg: {}});
                             }
                         );
                     } else {
@@ -911,7 +926,8 @@ Handler.prototype.resumeChat = function (msg, session, next) {
                 next(null, {code: 500, msg: 'chatHandler.resumeChat:Client not belongs to the chat.'});
             }
         } else {
-            next(null, {code: 500, msg: 'chatHandler.resumeChat:Chat not found.'});
+            logger.warn('chatHandler.resumeChat:Chat not found:%s', chatId);
+            next(null, {code: 200, msg: 'chatHandler.resumeChat:Chat not found.'});
         }
     } else {
         next(null, {code: 500, msg: 'chatHandler.resumeChat:Parameter userId or chatId is empty.'});
@@ -923,92 +939,96 @@ Handler.prototype.resumeChat = function (msg, session, next) {
  *
  * Publish chat invitation signal to all connected clients in login channel.
  *
- * @param msg{object} Msg contains userId, chatId, uids(array of object having uid&loginChannel), route(optional)
+ * @param msg{object} Msg contains userId, chatId, deviceId, uids(array of object having uid&loginChannel), route(optional), enc(optional)
  * @param session{object}
  * @param next{function}
  * @return {Void}
  */
 Handler.prototype.inviteChat = function (msg, session, next) {
-    var self = this, userId = msg.userId, chatId = msg.chatId, uids = this.parseJSON(msg.uids), route = msg.route || this.app.get("chatRoute");
-    if (userId && chatId) {
-        var channel = this.channelService.getChannel(chatId, false);
-        if (channel) {
-            var record = channel.getMember(userId);
-            if (record) {
-                if (uids && uids.length) {
-                    var arr = [];
+    var self = this, userId = msg.userId, chatId = msg.chatId, deviceId = msg.deviceId, uids = self.parseJSON(msg.uids), route = msg.route || self.app.get("chatRoute");
+    if (userId && chatId && deviceId) {
+        var channel = self.channelService.getChannel(chatId, true);
+        if (uids && uids.length) {
+            var arr = [];
 
-                    uids.forEach(function (item) {
-                        arr.push(function (cb) {
-                            var loginChannel = item.loginChannel;
+            uids.forEach(function (item) {
+                arr.push(function (cb) {
+                    var loginChannel = item.loginChannel;
 
-                            if (loginChannel) {
-                                var channel = self.channelService.getChannel(loginChannel, false);
+                    if (loginChannel) {
+                        var channel = self.channelService.getChannel(loginChannel, false);
 
-                                if (channel) {
-                                    var record = channel.getMember(item.uid);
+                        if (channel) {
+                            var record = channel.getMember(item.uid);
 
-                                    cb(null, record);
-                                } else {
-                                    logger.warn('chatHandler.inviteChat:User [%s] login channel not found.', item.uid);
+                            cb(null, record);
+                        } else {
+                            logger.warn('chatHandler.inviteChat:User [%s] login channel not found.', item.uid);
 
-                                    cb(null, null);
-                                }
-                            } else {
-                                logger.warn('chatHandler.inviteChat:User [%s] does not have login channel.', item.uid);
-                                cb(null, null);
-                            }
-                        });
+                            cb(null, null);
+                        }
+                    } else {
+                        logger.warn('chatHandler.inviteChat:User [%s] does not have login channel.', item.uid);
+                        cb(null, null);
+                    }
+                });
+            });
+
+            async.waterfall([
+                function (callback) {
+                    self.connectChat(_.extend(_.pick(msg, "userId", "chatId", "deviceId", "route", "enc"), {pushFlag: 0}), session, function (err, ret) {
+                        if (ret.code != 200) {
+                            callback(ret.msg);
+                        } else {
+                            callback(null);
+                        }
+                    });
+                },
+                function (callback) {
+                    async.parallel(arr, function (err, records) {
+                        callback(null, records);
+                    });
+                },
+                function (records, callback) {
+                    records = _.filter(records, function (item) {
+                        return item;
                     });
 
-                    async.waterfall([
-                        function (callback) {
-                            async.parallel(arr, function (err, records) {
-                                callback(null, records);
-                            });
-                        },
-                        function (records, callback) {
-                            records = _.filter(records, function (item) {
-                                return item;
-                            });
+                    if (records.length) {
+                        self.channelService.pushMessageByUids(
+                            route,
+                            {
+                                chatId: chatId,
+                                userId: userId,
+                                signal: self.app.get("chatInviteSignal"),
+                                chatState: self.getChatState(chatId)
+                            },
+                            records,
+                            function (err, failIds) {
+                                if (err) {
+                                    logger.error('chatHandler.inviteChat:' + err.toString());
+                                } else {
+                                    failIds && failIds.length && logger.error("chatHandler.inviteChat:Publish fail id:%s", failIds.toString());
+                                }
 
-                            if (records.length) {
-                                self.channelService.pushMessageByUids(
-                                    route,
-                                    {
-                                        chatId: chatId,
-                                        userId: userId,
-                                        signal: self.app.get("chatInviteSignal"),
-                                        chatState: self.getChatState(chatId)
-                                    },
-                                    records,
-                                    function (err, failIds) {
-                                        failIds && failIds.length && logger.error("chatHandler.inviteChat:Publish fail id:%s", failIds.toString());
-
-                                        callback(err);
-                                    }
-                                );
-                            } else {
                                 callback(null);
                             }
-                        }
-                    ], function (err) {
-                        if (err) {
-                            logger.error('chatHandler.inviteChat:' + err.toString());
-
-                            next(null, {code: 500, msg: 'chatHandler.inviteChat:' + err.toString()});
-                        } else {
-                            next(null, {code: 200, msg: {}});
-                        }
-                    })
-                } else {
-                    next(null, {code: 200, msg: 'chatHandler.inviteChat:No push user found.'});
+                        );
+                    } else {
+                        callback(null);
+                    }
                 }
-            } else {
-                next(null, {code: 500, msg: 'chatHandler.inviteChat:Client not belongs to the chat.'});
-            }
+            ], function (err) {
+                if (err) {
+                    logger.error('chatHandler.inviteChat:' + err.toString());
+
+                    next(null, {code: 500, msg: 'chatHandler.inviteChat:' + err.toString()});
+                } else {
+                    next(null, {code: 200, msg: {}});
+                }
+            })
         } else {
-            next(null, {code: 500, msg: 'chatHandler.inviteChat:Chat not found.'});
+            next(null, {code: 200, msg: 'chatHandler.inviteChat:No push user found.'});
         }
     } else {
         next(null, {code: 500, msg: 'chatHandler.inviteChat:Parameter userId or chatId is empty.'});
@@ -1018,59 +1038,60 @@ Handler.prototype.inviteChat = function (msg, session, next) {
 /**
  * @description
  *
- * Accept chat invitation.
+ * Accept chat invitation. Chat will be created if not found.
  *
- * @param msg{object} Msg contains userId, chatId, deviceId, route(optional)
+ * @param msg{object} Msg contains userId, chatId, deviceId, route(optional), enc(optional)
  * @param session{object}
  * @param next{function}
  * @return {Void}
  */
 Handler.prototype.acceptChatInvitation = function (msg, session, next) {
-    var self = this, userId = msg.userId, chatId = msg.chatId, deviceId = msg.deviceId, route = msg.route || this.app.get("chatRoute");
+    var self = this, userId = msg.userId, chatId = msg.chatId, deviceId = msg.deviceId, route = msg.route || self.app.get("chatRoute");
     if (userId && chatId && deviceId) {
-        var channel = this.channelService.getChannel(chatId, false);
-        if (channel) {
-            async.waterfall([
-                function (cb) {
-                    self.connectChat(_.pick(msg, "userId", "chatId", "deviceId", "route"), session, function (err, ret) {
-                        if (ret.code != 200) {
-                            cb(ret.msg);
-                        } else {
-                            cb(null);
-                        }
-                    });
-                },
-                function (cb) {
-                    var uids = self.getOtherClientIds(chatId, userId);
-
-                    if (uids && uids.length) {
-                        self.channelService.pushMessageByUids(
-                            route,
-                            {
-                                chatId: chatId,
-                                userId: userId,
-                                signal: self.app.get("chatAcceptSignal"),
-                                chatState: self.getChatState(chatId)
-                            },
-                            uids,
-                            function (err, failIds) {
-                                cb(err);
-                            }
-                        );
+        async.waterfall([
+            function (cb) {
+                self.connectChat(_.extend(_.pick(msg, "userId", "chatId", "deviceId", "route", "enc"), {pushFlag: 0}), session, function (err, ret) {
+                    if (ret.code != 200) {
+                        cb(ret.msg);
                     } else {
                         cb(null);
                     }
-                }
-            ], function (err) {
-                if (err) {
-                    next(null, {code: 500, msg: 'chatHandler.acceptChatInvitation:' + err.toString()});
+                });
+            },
+            function (cb) {
+                var uids = self.getOtherClientIds(chatId, userId);
+
+                if (uids && uids.length) {
+                    self.channelService.pushMessageByUids(
+                        route,
+                        {
+                            chatId: chatId,
+                            userId: userId,
+                            signal: self.app.get("chatAcceptSignal"),
+                            chatState: self.getChatState(chatId)
+                        },
+                        uids,
+                        function (err, failIds) {
+                            if (err) {
+                                logger.error('chatHandler.acceptChatInvitation:' + err.toString());
+                            } else {
+                                failIds && failIds.length && logger.error("chatHandler.acceptChatInvitation:Publish fail id:%s", failIds.toString());
+                            }
+
+                            cb(null);
+                        }
+                    );
                 } else {
-                    next(null, {code: 200, msg: {}});
+                    cb(null);
                 }
-            });
-        } else {
-            next(null, {code: 500, msg: 'chatHandler.acceptChatInvitation:Chat not found.'});
-        }
+            }
+        ], function (err) {
+            if (err) {
+                next(null, {code: 500, msg: 'chatHandler.acceptChatInvitation:' + err.toString()});
+            } else {
+                next(null, {code: 200, msg: {}});
+            }
+        });
     } else {
         next(null, {code: 500, msg: 'chatHandler.acceptChatInvitation:Parameter userId or chatId is empty.'});
     }
@@ -1087,36 +1108,33 @@ Handler.prototype.acceptChatInvitation = function (msg, session, next) {
  * @return {Void}
  */
 Handler.prototype.closeChat = function (msg, session, next) {
-    var userId = msg.userId, chatId = msg.chatId, route = msg.route || this.app.get("chatRoute");
+    var userId = msg.userId, chatId = msg.chatId, route = msg.route || self.app.get("chatRoute");
     if (userId && chatId) {
-        var channel = this.channelService.getChannel(chatId, false);
+        var channel = self.channelService.getChannel(chatId, false);
         if (channel) {
             var record = channel.getMember(userId);
             if (record) {
-                if (record.category === this.app.get("creatorCategory")) {
-                    var uids = this.getOtherClientIds(chatId, userId);
+                if (record.category === self.app.get("creatorCategory")) {
+                    var uids = self.getOtherClientIds(chatId, userId);
 
-                    this.channelService.destroyChannel(chatId);
+                    self.channelService.destroyChannel(chatId);
 
                     if (uids && uids.length) {
-                        this.channelService.pushMessageByUids(
+                        self.channelService.pushMessageByUids(
                             route,
                             {
                                 chatId: chatId,
                                 userId: userId,
-                                signal: this.app.get("chatCloseSignal")
+                                signal: self.app.get("chatCloseSignal")
                             },
                             uids,
                             function (err, failIds) {
                                 if (err) {
                                     logger.error('chatHandler.closeChat:' + err.toString());
-
-                                    next(null, {code: 500, msg: 'chatHandler.closeChat:' + err.toString()});
                                 } else {
                                     failIds && failIds.length && logger.error("chatHandler.closeChat:Publish fail id:%s", failIds.toString());
-
-                                    next(null, {code: 200, msg: 'chatHandler.closeChat:Channel destroyed.'});
                                 }
+                                next(null, {code: 200, msg: {}});
                             }
                         );
                     } else {
@@ -1141,31 +1159,47 @@ Handler.prototype.closeChat = function (msg, session, next) {
  *
  * Create topic, broadcast topic to other clients in channel. Topic is a special kind of channel member.
  *
- * @param msg{object} Msg contains userId, chatId, topicId, route(optional)
+ * @param msg{object} Msg contains userId, chatId, topicId, deviceId, enc(optional), route(optional)
  * @param session{object}
  * @param next{function}
  * @return {Void}
  */
 Handler.prototype.createTopic = function (msg, session, next) {
-    var userId = msg.userId, chatId = msg.chatId, topicId = msg.topicId, sid = this.app.get("serverId"), route = msg.route || this.app.get("chatRoute");
-    if (userId && chatId && topicId && sid) {
-        var channel = this.channelService.getChannel(chatId, false);
-        if (channel) {
-            var record = channel.getMember(topicId);
+    var self = this, userId = msg.userId, chatId = msg.chatId, topicId = msg.topicId, deviceId = msg.deviceId, sid = self.app.get("serverId"), route = msg.route || self.app.get("chatRoute");
+    if (userId && chatId && topicId && deviceId && sid) {
+        async.waterfall([
+            function (cb) {
+                self.connectChat(_.extend(_.pick(msg, "userId", "chatId", "deviceId", "route", "enc"), {pushFlag: 0}), session, function (err, ret) {
+                    if (ret.code != 200) {
+                        cb(ret.msg);
+                    } else {
+                        cb(null);
+                    }
+                });
+            },
+            function (cb) {
+                var channel = self.channelService.getChannel(chatId, false);
+                var record = channel.getMember(topicId);
 
-            //TODO Record member type not check, creator not check.
-            if (!record) {
-                channel.add(topicId, sid);
-                record = channel.getMember(topicId);
-                record.memberType = this.app.get("topicMemberType");
-                record.topicState = this.app.get("topicOpenState");
-                record.creator = userId;
+                if (!record) {
+                    channel.add(topicId, sid);
+                    record = channel.getMember(topicId);
+                    record.memberType = self.app.get("topicMemberType");
+                    record.topicState = self.app.get("topicOpenState");
+                    record.creator = userId;
+                }
+
+                cb(null, {topicId: topicId, topicState: record.topicState});
             }
+        ], function (err, msg) {
+            if (err) {
+                logger.error('chatHandler.createTopic:' + err.toString());
 
-            next(null, {code: 200, msg: {topicId: topicId, topicState: record.topicState}});
-        } else {
-            next(null, {code: 500, msg: 'chatHandler.createTopic:Chat not found.'});
-        }
+                next(null, {code: 500, msg: 'chatHandler.createTopic:' + err.toString()});
+            } else {
+                next(null, {code: 200, msg: msg});
+            }
+        });
     } else {
         next(null, {code: 500, msg: 'topicHandler.createTopic:Parameter is empty.'});
     }
@@ -1182,39 +1216,37 @@ Handler.prototype.createTopic = function (msg, session, next) {
  * @return {Void}
  */
 Handler.prototype.pauseTopic = function (msg, session, next) {
-    var userId = msg.userId, chatId = msg.chatId, topicId = msg.topicId, route = msg.route || this.app.get("chatRoute");
+    var userId = msg.userId, chatId = msg.chatId, topicId = msg.topicId, route = msg.route || self.app.get("chatRoute");
     if (userId && chatId && topicId) {
-        var channel = this.channelService.getChannel(chatId, false);
+        var channel = self.channelService.getChannel(chatId, false);
         if (channel) {
             var record = channel.getMember(topicId);
 
-            if (record && record.memberType === this.app.get("topicMemberType")) {
+            if (record && record.memberType === self.app.get("topicMemberType")) {
                 if (record.creator === userId) {
-                    record.topicState = this.app.get("topicPauseState");
+                    record.topicState = self.app.get("topicPauseState");
 
-                    var uids = this.getOtherClientIds(chatId, userId);
+                    var uids = self.getOtherClientIds(chatId, userId);
 
                     if (uids && uids.length) {
-                        this.channelService.pushMessageByUids(
+                        self.channelService.pushMessageByUids(
                             route,
                             {
                                 chatId: chatId,
                                 userId: userId,
                                 topicId: topicId,
-                                signal: this.app.get("topicPauseSignal"),
-                                topicState: this.app.get("topicPauseState")
+                                signal: self.app.get("topicPauseSignal"),
+                                topicState: self.app.get("topicPauseState")
                             },
                             uids,
                             function (err, failIds) {
                                 if (err) {
                                     logger.error('chatHandler.pauseChatTopic:' + err.toString());
-
-                                    next(null, {code: 500, msg: 'chatHandler.pauseChatTopic:' + err.toString()});
                                 } else {
                                     failIds && failIds.length && logger.error("chatHandler.pauseChatTopic:Publish fail id:%s", failIds.toString());
-
-                                    next(null, {code: 200, msg: {}});
                                 }
+
+                                next(null, {code: 200, msg: {}});
                             }
                         );
                     } else {
@@ -1224,11 +1256,11 @@ Handler.prototype.pauseTopic = function (msg, session, next) {
                     next(null, {code: 500, msg: 'chatHandler.pauseChatTopic:Only topic creator is allowed.'});
                 }
             } else {
-                next(null, {code: 500, msg: 'chatHandler.pauseChatTopic:Topic not found.'});
+                next(null, {code: 200, msg: 'chatHandler.pauseChatTopic:Topic not found.'});
             }
 
         } else {
-            next(null, {code: 500, msg: 'chatHandler.pauseChatTopic:Chat not found.'});
+            next(null, {code: 200, msg: 'chatHandler.pauseChatTopic:Chat not found.'});
         }
     } else {
         next(null, {code: 500, msg: 'chatHandler.pauseChatTopic:Parameter is empty.'});
@@ -1246,39 +1278,36 @@ Handler.prototype.pauseTopic = function (msg, session, next) {
  * @return {Void}
  */
 Handler.prototype.resumeTopic = function (msg, session, next) {
-    var userId = msg.userId, chatId = msg.chatId, topicId = msg.topicId, route = msg.route || this.app.get("chatRoute");
+    var self = this, userId = msg.userId, chatId = msg.chatId, topicId = msg.topicId, route = msg.route || self.app.get("chatRoute");
     if (userId && chatId && topicId) {
-        var channel = this.channelService.getChannel(chatId, false);
+        var channel = self.channelService.getChannel(chatId, false);
         if (channel) {
             var record = channel.getMember(topicId);
 
-            if (record && record.memberType === this.app.get("topicMemberType")) {
+            if (record && record.memberType === self.app.get("topicMemberType")) {
                 if (record.creator === userId) {
-                    record.topicState = this.app.get("topicOpenState");
+                    record.topicState = self.app.get("topicOpenState");
 
-                    var uids = this.getOtherClientIds(chatId, userId);
+                    var uids = self.getOtherClientIds(chatId, userId);
 
                     if (uids && uids.length) {
-                        this.channelService.pushMessageByUids(
+                        self.channelService.pushMessageByUids(
                             route,
                             {
                                 chatId: chatId,
                                 userId: userId,
                                 topicId: topicId,
-                                signal: this.app.get("topicResumeSignal"),
-                                topicState: this.app.get("topicOpenState")
+                                signal: self.app.get("topicResumeSignal"),
+                                topicState: self.app.get("topicOpenState")
                             },
                             uids,
                             function (err, failIds) {
                                 if (err) {
                                     logger.error('chatHandler.resumeTopic:' + err.toString());
-
-                                    next(null, {code: 500, msg: 'chatHandler.resumeTopic:' + err.toString()});
                                 } else {
                                     failIds && failIds.length && logger.error("chatHandler.resumeTopic:Publish fail id:%s", failIds.toString());
-
-                                    next(null, {code: 200, msg: {}});
                                 }
+                                next(null, {code: 200, msg: {}});
                             }
                         );
                     } else {
@@ -1288,11 +1317,11 @@ Handler.prototype.resumeTopic = function (msg, session, next) {
                     next(null, {code: 500, msg: 'chatHandler.resumeTopic:Only topic creator is allowed.'});
                 }
             } else {
-                next(null, {code: 500, msg: 'chatHandler.resumeTopic:Topic not found.'});
+                next(null, {code: 200, msg: 'chatHandler.resumeTopic:Topic not found.'});
             }
 
         } else {
-            next(null, {code: 500, msg: 'chatHandler.resumeTopic:Chat not found.'});
+            next(null, {code: 200, msg: 'chatHandler.resumeTopic:Chat not found.'});
         }
     } else {
         next(null, {code: 500, msg: 'chatHandler.resumeTopic:Parameter is empty.'});
@@ -1302,62 +1331,71 @@ Handler.prototype.resumeTopic = function (msg, session, next) {
 /**
  * @description
  *
- * Invite to join topic, send invite topic signal to all clients, if not specified, in channel. Only topic creator is allowed to.
+ * Invite to join topic, send invite topic signal to all clients, if not specified, in channel.
+ * Only topic creator is allowed to. Chat&Topic will be created if not found.
  *
- * @param msg{object} Msg contains userId, chatId, topicId, uids(array of uid, optional), route(optional)
+ * @param msg{object} Msg contains userId, chatId, topicId, deviceId, uids(array of uid, optional), route(optional), enc(optional)
  * @param session{object}
  * @param next{function}
  * @return {Void}
  */
 Handler.prototype.inviteTopic = function (msg, session, next) {
-    var userId = msg.userId, chatId = msg.chatId, topicId = msg.topicId, uids = this.getClientIds(chatId, this.parseJSON(msg.uids)), route = msg.route || this.app.get("chatRoute");
-    if (userId && chatId && topicId) {
-        var channel = this.channelService.getChannel(chatId, false);
-        if (channel) {
-            var record = channel.getMember(topicId);
-
-            if (record && record.memberType === this.app.get("topicMemberType")) {
-                if (record.creator === userId) {
-                    if (!uids || uids.length == 0) {
-                        uids = this.getOtherClientIds(chatId, userId);
-                    }
-
-                    if (uids.length) {
-                        this.channelService.pushMessageByUids(
-                            route,
-                            {
-                                chatId: chatId,
-                                userId: userId,
-                                topicId: topicId,
-                                signal: this.app.get("topicInviteSignal"),
-                                topicState: record.topicState
-                            },
-                            uids,
-                            function (err, failIds) {
-                                if (err) {
-                                    logger.error('chatHandler.inviteTopic:' + err.toString());
-
-                                    next(null, {code: 500, msg: 'chatHandler.inviteTopic:' + err.toString()});
-                                } else {
-                                    failIds && failIds.length && logger.error("chatHandler.inviteTopic:Publish fail id:%s", failIds.toString());
-
-                                    next(null, {code: 200, msg: {}});
-                                }
-                            }
-                        );
+    //TODO Encrypt topicId for topic creator to validate user entity.
+    var self = this, userId = msg.userId, chatId = msg.chatId, topicId = msg.topicId, deviceId = msg.deviceId, uids = self.getClientIds(chatId, self.parseJSON(msg.uids)), route = msg.route || self.app.get("chatRoute");
+    if (userId && chatId && topicId && deviceId) {
+        async.waterfall([
+            function (cb) {
+                self.createTopic(_.extend(_.pick(msg, "userId", "chatId", "topicId", "deviceId", "route", "enc")), session, function (err, ret) {
+                    if (ret.code != 200) {
+                        cb(ret.msg);
                     } else {
-                        next(null, {code: 200, msg: 'chatHandler.inviteTopic:No client found.'});
+                        cb(null);
                     }
-                } else {
-                    next(null, {code: 500, msg: 'chatHandler.inviteTopic:Only topic creator is allowed.'});
-                }
-            } else {
-                next(null, {code: 500, msg: 'chatHandler.inviteTopic:Topic not found.'});
-            }
+                });
+            },
+            function (cb) {
+                var channel = self.channelService.getChannel(chatId, false);
+                var record = channel.getMember(topicId);
 
-        } else {
-            next(null, {code: 500, msg: 'chatHandler.inviteTopic:Chat not found.'});
-        }
+                if (!uids || uids.length == 0) {
+                    uids = self.getOtherClientIds(chatId, userId);
+                }
+
+                if (uids.length) {
+                    self.channelService.pushMessageByUids(
+                        route,
+                        {
+                            chatId: chatId,
+                            userId: userId,
+                            topicId: topicId,
+                            signal: self.app.get("topicInviteSignal"),
+                            topicState: record.topicState
+                        },
+                        uids,
+                        function (err, failIds) {
+                            if (err) {
+                                logger.error('chatHandler.inviteTopic:' + err.toString());
+                            } else {
+                                failIds && failIds.length && logger.error("chatHandler.inviteTopic:Publish fail id:%s", failIds.toString());
+                            }
+                            cb(null);
+                        }
+                    );
+                } else {
+                    logger.warn('chatHandler.inviteTopic:No client found.');
+
+                    cb(null);
+                }
+            }
+        ], function (err) {
+            if (err) {
+                logger.error('chatHandler.inviteTopic:' + err.toString());
+
+                next(null, {code: 500, msg: 'chatHandler.inviteTopic:' + err.toString()});
+            } else {
+                next(null, {code: 200, msg: {}});
+            }
+        });
     } else {
         next(null, {code: 500, msg: 'chatHandler.inviteTopic:Parameter is empty.'});
     }
@@ -1374,37 +1412,34 @@ Handler.prototype.inviteTopic = function (msg, session, next) {
  * @return {Void}
  */
 Handler.prototype.closeTopic = function (msg, session, next) {
-    var userId = msg.userId, chatId = msg.chatId, topicId = msg.topicId, route = msg.route || this.app.get("chatRoute");
+    var self = this, userId = msg.userId, chatId = msg.chatId, topicId = msg.topicId, route = msg.route || self.app.get("chatRoute");
     if (userId && chatId && topicId) {
-        var channel = this.channelService.getChannel(chatId, false);
+        var channel = self.channelService.getChannel(chatId, false);
         if (channel) {
             var record = channel.getMember(topicId);
 
-            if (record && record.memberType === this.app.get("topicMemberType")) {
+            if (record && record.memberType === self.app.get("topicMemberType")) {
                 if (record.creator === userId) {
                     channel.leave(record.uid, record.sid);
 
-                    var uids = this.getOtherClientIds(chatId, userId);
+                    var uids = self.getOtherClientIds(chatId, userId);
                     if (uids.length) {
-                        this.channelService.pushMessageByUids(
+                        self.channelService.pushMessageByUids(
                             route,
                             {
                                 chatId: chatId,
                                 userId: userId,
                                 topicId: topicId,
-                                signal: this.app.get("topicCloseSignal")
+                                signal: self.app.get("topicCloseSignal")
                             },
                             uids,
                             function (err, failIds) {
                                 if (err) {
                                     logger.error('chatHandler.closeTopic:' + err.toString());
-
-                                    next(null, {code: 500, msg: 'chatHandler.closeTopic:' + err.toString()});
                                 } else {
                                     failIds && failIds.length && logger.error("chatHandler.closeTopic:Publish fail id:%s", failIds.toString());
-
-                                    next(null, {code: 200, msg: {}});
                                 }
+                                next(null, {code: 200, msg: {}});
                             }
                         );
                     } else {
@@ -1414,11 +1449,11 @@ Handler.prototype.closeTopic = function (msg, session, next) {
                     next(null, {code: 500, msg: 'chatHandler.closeTopic:Only topic creator is allowed.'});
                 }
             } else {
-                next(null, {code: 500, msg: 'chatHandler.closeTopic:Topic not found.'});
+                next(null, {code: 200, msg: 'chatHandler.closeTopic:Topic not found.'});
             }
 
         } else {
-            next(null, {code: 500, msg: 'chatHandler.closeTopic:Chat not found.'});
+            next(null, {code: 200, msg: 'chatHandler.closeTopic:Chat not found.'});
         }
     } else {
         next(null, {code: 500, msg: 'chatHandler.closeTopic:Parameter is empty.'});
@@ -1428,7 +1463,8 @@ Handler.prototype.closeTopic = function (msg, session, next) {
 /**
  * @description
  *
- * Publish message to all connected clients, if not specified, in channel.
+ * Publish message to all connected clients, if not specified, in channel. Chat will be created if user connect.
+ * Since user must connect before push, function will fail if chat not found.
  *
  * @param msg{object} Msg contains userId, chatId, uids(array of uid, optional), route(optional)
  * @param session{object}
@@ -1436,36 +1472,34 @@ Handler.prototype.closeTopic = function (msg, session, next) {
  * @return {Void}
  */
 Handler.prototype.push = function (msg, session, next) {
-    var userId = msg.userId, chatId = msg.chatId, uids = this.getClientIds(chatId, this.parseJSON(msg.uids)), route = msg.route || this.app.get("chatRoute");
+    var self = this, userId = msg.userId, chatId = msg.chatId, uids = self.getClientIds(chatId, self.parseJSON(msg.uids)), route = msg.route || self.app.get("chatRoute");
     if (userId && chatId) {
-        var channel = this.channelService.getChannel(chatId, false);
+        var channel = self.channelService.getChannel(chatId, false);
         if (channel) {
-            if (this.isMemberOf(chatId, userId)) {
-                if (this.getChatState(chatId) == this.app.get("chatOpenState")) {
+            if (self.isMemberOf(chatId, userId)) {
+                if (self.getChatState(chatId) == self.app.get("chatOpenState")) {
                     if (!uids || uids.length == 0) {
-                        uids = this.getOtherClientIds(chatId, userId);
+                        uids = self.getOtherClientIds(chatId, userId);
                     }
 
                     if (uids && uids.length) {
-                        this.channelService.pushMessageByUids(
+                        self.channelService.pushMessageByUids(
                             route,
                             {
                                 chatId: chatId,
                                 userId: userId,
-                                signal: this.app.get("chatMessageSignal"),
+                                signal: self.app.get("chatMessageSignal"),
                                 payload: msg.payload
                             },
                             uids,
                             function (err, failIds) {
                                 if (err) {
                                     logger.error('chatHandler.push:' + err.toString());
-
-                                    next(null, {code: 500, msg: 'chatHandler.push:' + err.toString()});
                                 } else {
                                     failIds && failIds.length && logger.error("chatHandler.push:Publish fail id:%s", failIds.toString());
-
-                                    next(null, {code: 200, msg: {}});
                                 }
+
+                                next(null, {code: 200, msg: {}});
                             }
                         );
                     } else {
@@ -1496,7 +1530,7 @@ Handler.prototype.push = function (msg, session, next) {
  * @return {Void}
  */
 Handler.prototype.pushSingle = function (msg, session, next) {
-    var self = this, userId = msg.userId, uids = this.parseJSON(msg.uids), route = msg.route || this.app.get("chatRoute");
+    var self = this, userId = msg.userId, uids = self.parseJSON(msg.uids), route = msg.route || self.app.get("chatRoute");
     if (userId) {
         if (uids && uids.length) {
             var arr = [];
@@ -1544,9 +1578,13 @@ Handler.prototype.pushSingle = function (msg, session, next) {
                             },
                             records,
                             function (err, failIds) {
-                                failIds && failIds.length && logger.error("chatHandler.pushSingle:Publish fail id:%s", failIds.toString());
+                                if (err) {
+                                    logger.error('chatHandler.pushSingle:' + err.toString());
+                                } else {
+                                    failIds && failIds.length && logger.error("chatHandler.pushSingle:Publish fail id:%s", failIds.toString());
+                                }
 
-                                callback(err);
+                                callback(null);
                             }
                         );
                     } else {
@@ -1581,35 +1619,32 @@ Handler.prototype.pushSingle = function (msg, session, next) {
  * @return {Void}
  */
 Handler.prototype.pushTopic = function (msg, session, next) {
-    var userId = msg.userId, chatId = msg.chatId, topicId = msg.topicId, sid = this.app.get("serverId"), route = msg.route || this.app.get("chatRoute");
+    var self = this, userId = msg.userId, chatId = msg.chatId, topicId = msg.topicId, sid = self.app.get("serverId"), route = msg.route || self.app.get("chatRoute");
     if (userId && chatId && topicId && sid) {
-        var channel = this.channelService.getChannel(chatId, false);
+        var channel = self.channelService.getChannel(chatId, false);
         if (channel) {
             var record = channel.getMember(topicId);
 
-            if (record && record.memberType === this.app.get("topicMemberType")) {
-                if (record.topicState === this.app.get("topicOpenState")) {
-                    if (this.isMemberOf(chatId, userId)) {
-                        this.channelService.pushMessageByUids(
+            if (record && record.memberType === self.app.get("topicMemberType")) {
+                if (record.topicState === self.app.get("topicOpenState")) {
+                    if (self.isMemberOf(chatId, userId)) {
+                        self.channelService.pushMessageByUids(
                             route,
                             {
                                 chatId: chatId,
                                 userId: userId,
                                 topicId: topicId,
-                                signal: this.app.get("topicMessageSignal"),
+                                signal: self.app.get("topicMessageSignal"),
                                 payload: msg.payload
                             },
-                            [this.findTopicOwner(chatId, topicId)],
+                            [self.findTopicOwner(chatId, topicId)],
                             function (err, failIds) {
                                 if (err) {
                                     logger.error('chatHandler.pushTopic:' + err.toString());
-
-                                    next(null, {code: 500, msg: 'chatHandler.pushTopic:' + err.toString()});
                                 } else {
                                     failIds && failIds.length && logger.error("chatHandler.pushTopic:Publish fail id:%s", failIds.toString());
-
-                                    next(null, {code: 200, msg: {}});
                                 }
+                                next(null, {code: 200, msg: {}});
                             }
                         );
                     } else {
