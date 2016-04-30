@@ -5,7 +5,7 @@ var pomelo = require('pomelo');
  * Init app for client.
  */
 var app = pomelo.createApp();
-app.set('util', require('app/common/util'));
+app.set('util', require('./app/common/util'));
 
 app.set('name', 'sirius');
 

@@ -657,7 +657,7 @@ Handler.prototype.createChat = function (msg, session, next) {
 
         next(null, {
             code: 200, msg: {
-                enc: self.getEncryptedChatId(chatId)
+                creatorEncryption: self.getEncryptedChatId(chatId)
             }
         });
     } else {
@@ -691,7 +691,6 @@ Handler.prototype.connectChat = function (msg, session, next) {
                 creatorRecord.category = self.app.get("creatorCategory");
                 creatorRecord.chatState = self.app.get("chatOpenState");
             }
-            ;
         }
 
         var chatState,
@@ -820,23 +819,31 @@ Handler.prototype.disconnectChat = function (msg, session, next) {
  *
  * Publish pause signal to all connected clients, only creator is allowed to.
  *
- * @param msg{object} Msg contains userId, chatId, route(optional)
+ * @param msg{object} Msg contains userId, chatId, deviceId, enc(optional), route(optional)
  * @param session{object}
  * @param next{function}
  * @return {Void}
  */
 Handler.prototype.pauseChat = function (msg, session, next) {
-    var self = this, userId = msg.userId, chatId = msg.chatId, route = msg.route || self.app.get("chatRoute");
+    var self = this, userId = msg.userId, chatId = msg.chatId, deviceId = msg.deviceId, route = msg.route || self.app.get("chatRoute");
     if (userId && chatId) {
-        var channel = self.channelService.getChannel(chatId, false);
-        if (channel) {
-            var record = channel.getMember(userId);
-            if (record) {
-                if (record.category === self.app.get("creatorCategory")) {
+        async.waterfall([
+            function (callback) {
+                self.connectChat(_.extend(_.pick(msg, "userId", "chatId", "deviceId", "route", "enc"), {pushFlag: 0}), session, function (err, ret) {
+                    if (ret.code != 200) {
+                        callback(ret.msg);
+                    } else {
+                        callback(null);
+                    }
+                });
+            },
+            function (callback) {
+                var channel = self.channelService.getChannel(chatId, false);
+                var record = channel.getMember(userId);
+                if (record) {
                     record.chatState = self.app.get("chatPauseState");
 
                     var uids = self.getOtherClientIds(chatId, userId);
-
                     if (uids && uids.length) {
                         self.channelService.pushMessageByUids(
                             route,
@@ -854,22 +861,28 @@ Handler.prototype.pauseChat = function (msg, session, next) {
                                     failIds && failIds.length && logger.error("chatHandler.pauseChat:Publish fail id:%s", failIds.toString());
                                 }
 
-                                next(null, {code: 200, msg: {}});
+                                callback(null);
                             }
                         );
                     } else {
-                        next(null, {code: 200, msg: 'chatHandler.pauseChat:No push user found.'});
+                        callback(null);
                     }
                 } else {
-                    next(null, {code: 500, msg: 'chatHandler.pauseChat:Only chat creator is allowed to.'});
+                    callback('chatHandler.pauseChat:Client not belongs to the chat.');
                 }
-            } else {
-                next(null, {code: 500, msg: 'chatHandler.pauseChat:Client not belongs to the chat.'});
             }
-        } else {
-            logger.warn('chatHandler.pauseChat:Chat not found:%s', chatId);
-            next(null, {code: 200, msg: 'chatHandler.pauseChat:Chat not found.'});
-        }
+        ], function (err) {
+            if (err) {
+                logger.error('chatHandler.pauseChat:' + err.toString());
+
+                next(null, {code: 500, msg: 'chatHandler.pauseChat:' + err.toString()});
+            } else {
+                next(null, {
+                    code: 200,
+                    msg: {}
+                });
+            }
+        });
     } else {
         next(null, {code: 500, msg: 'chatHandler.pauseChat:Parameter userId or chatId is empty.'});
     }
@@ -880,23 +893,31 @@ Handler.prototype.pauseChat = function (msg, session, next) {
  *
  * Publish resume signal to all connected clients, only creator is allowed to. The containing topics will be resumed as well.
  *
- * @param msg{object} Msg contains userId, chatId, route(optional)
+ * @param msg{object} Msg contains userId, chatId, deviceId, enc(optional), route(optional)
  * @param session{object}
  * @param next{function}
  * @return {Void}
  */
 Handler.prototype.resumeChat = function (msg, session, next) {
-    var self = this, userId = msg.userId, chatId = msg.chatId, route = msg.route || self.app.get("chatRoute");
-    if (userId && chatId) {
-        var channel = self.channelService.getChannel(chatId, false);
-        if (channel) {
-            var record = channel.getMember(userId);
-            if (record) {
-                if (record.category === self.app.get("creatorCategory")) {
+    var self = this, userId = msg.userId, chatId = msg.chatId, deviceId = msg.deviceId, route = msg.route || self.app.get("chatRoute");
+    if (userId && chatId && deviceId) {
+        async.waterfall([
+            function (callback) {
+                self.connectChat(_.extend(_.pick(msg, "userId", "chatId", "deviceId", "route", "enc"), {pushFlag: 0}), session, function (err, ret) {
+                    if (ret.code != 200) {
+                        callback(ret.msg);
+                    } else {
+                        callback(null);
+                    }
+                });
+            },
+            function (callback) {
+                var channel = self.channelService.getChannel(chatId, false);
+                var record = channel.getMember(userId);
+                if (record) {
                     record.chatState = self.app.get("chatOpenState");
 
                     var uids = self.getOtherClientIds(chatId, userId);
-
                     if (uids && uids.length) {
                         self.channelService.pushMessageByUids(
                             route,
@@ -913,22 +934,28 @@ Handler.prototype.resumeChat = function (msg, session, next) {
                                 } else {
                                     failIds && failIds.length && logger.error("chatHandler.resumeChat:Publish fail id:%s", failIds.toString());
                                 }
-                                next(null, {code: 200, msg: {}});
+                                callback(null);
                             }
                         );
                     } else {
-                        next(null, {code: 200, msg: 'chatHandler.resumeChat:No push user found.'});
+                        callback(null);
                     }
                 } else {
-                    next(null, {code: 500, msg: 'chatHandler.resumeChat:Only chat creator is allowed to.'});
+                    callback('chatHandler.resumeChat:Client not belongs to the chat.');
                 }
-            } else {
-                next(null, {code: 500, msg: 'chatHandler.resumeChat:Client not belongs to the chat.'});
             }
-        } else {
-            logger.warn('chatHandler.resumeChat:Chat not found:%s', chatId);
-            next(null, {code: 200, msg: 'chatHandler.resumeChat:Chat not found.'});
-        }
+        ], function (err) {
+            if (err) {
+                logger.error('chatHandler.resumeChat:' + err.toString());
+
+                next(null, {code: 500, msg: 'chatHandler.resumeChat:' + err.toString()});
+            } else {
+                next(null, {
+                    code: 200,
+                    msg: {}
+                });
+            }
+        });
     } else {
         next(null, {code: 500, msg: 'chatHandler.resumeChat:Parameter userId or chatId is empty.'});
     }
@@ -1210,58 +1237,75 @@ Handler.prototype.createTopic = function (msg, session, next) {
  *
  * Change topic state to pause, send pause topic signal to all clients in channel. Only topic creator is allowed to.
  *
- * @param msg{object} Msg contains userId, chatId, topicId, route(optional)
+ * @param msg{object} Msg contains userId, chatId, topicId, deviceId, enc(optional), route(optional)
  * @param session{object}
  * @param next{function}
  * @return {Void}
  */
 Handler.prototype.pauseTopic = function (msg, session, next) {
-    var userId = msg.userId, chatId = msg.chatId, topicId = msg.topicId, route = msg.route || self.app.get("chatRoute");
-    if (userId && chatId && topicId) {
-        var channel = self.channelService.getChannel(chatId, false);
-        if (channel) {
-            var record = channel.getMember(topicId);
+    var self = this, userId = msg.userId, chatId = msg.chatId, topicId = msg.topicId, deviceId = msg.deviceId, route = msg.route || self.app.get("chatRoute");
+    if (userId && chatId && topicId && deviceId) {
+        async.waterfall(
+            [
+                function (callback) {
+                    self.createTopic(_.extend(_.pick(msg, "userId", "chatId", "topicId", "deviceId", "route", "enc")), session, function (err, ret) {
+                        if (ret.code != 200) {
+                            callback(ret.msg);
+                        } else {
+                            callback(null);
+                        }
+                    });
+                },
+                function (callback) {
+                    var channel = self.channelService.getChannel(chatId, false);
+                    var record = channel.getMember(topicId);
 
-            if (record && record.memberType === self.app.get("topicMemberType")) {
-                if (record.creator === userId) {
-                    record.topicState = self.app.get("topicPauseState");
+                    if (record.creator === userId) {
+                        record.topicState = self.app.get("topicPauseState");
 
-                    var uids = self.getOtherClientIds(chatId, userId);
+                        var uids = self.getOtherClientIds(chatId, userId);
 
-                    if (uids && uids.length) {
-                        self.channelService.pushMessageByUids(
-                            route,
-                            {
-                                chatId: chatId,
-                                userId: userId,
-                                topicId: topicId,
-                                signal: self.app.get("topicPauseSignal"),
-                                topicState: self.app.get("topicPauseState")
-                            },
-                            uids,
-                            function (err, failIds) {
-                                if (err) {
-                                    logger.error('chatHandler.pauseChatTopic:' + err.toString());
-                                } else {
-                                    failIds && failIds.length && logger.error("chatHandler.pauseChatTopic:Publish fail id:%s", failIds.toString());
+                        if (uids && uids.length) {
+                            self.channelService.pushMessageByUids(
+                                route,
+                                {
+                                    chatId: chatId,
+                                    userId: userId,
+                                    topicId: topicId,
+                                    signal: self.app.get("topicPauseSignal"),
+                                    topicState: self.app.get("topicPauseState")
+                                },
+                                uids,
+                                function (err, failIds) {
+                                    if (err) {
+                                        logger.error('chatHandler.pauseChatTopic:' + err.toString());
+                                    } else {
+                                        failIds && failIds.length && logger.error("chatHandler.pauseChatTopic:Publish fail id:%s", failIds.toString());
+                                    }
+
+                                    callback(null);
                                 }
-
-                                next(null, {code: 200, msg: {}});
-                            }
-                        );
+                            );
+                        } else {
+                            callback('chatHandler.pauseChatTopic:No user found.');
+                        }
                     } else {
-                        next(null, {code: 200, msg: 'chatHandler.pauseChatTopic:No user found.'});
+                        callback('chatHandler.pauseChatTopic:Only topic creator is allowed.');
                     }
-                } else {
-                    next(null, {code: 500, msg: 'chatHandler.pauseChatTopic:Only topic creator is allowed.'});
                 }
-            } else {
-                next(null, {code: 200, msg: 'chatHandler.pauseChatTopic:Topic not found.'});
-            }
+            ], function (err) {
+                if (err) {
+                    logger.error('chatHandler.pauseTopic:' + err.toString());
 
-        } else {
-            next(null, {code: 200, msg: 'chatHandler.pauseChatTopic:Chat not found.'});
-        }
+                    next(null, {code: 500, msg: 'chatHandler.pauseTopic:' + err.toString()});
+                } else {
+                    next(null, {
+                        code: 200,
+                        msg: {}
+                    });
+                }
+            }
+        );
     } else {
         next(null, {code: 500, msg: 'chatHandler.pauseChatTopic:Parameter is empty.'});
     }
@@ -1272,57 +1316,75 @@ Handler.prototype.pauseTopic = function (msg, session, next) {
  *
  * Change topic state to open, send resume topic signal to all clients in channel. Only topic creator is allowed to.
  *
- * @param msg{object} Msg contains userId, chatId, topicId, route(optional)
+ * @param msg{object} Msg contains userId, chatId, topicId, deviceId, enc(optional), route(optional)
  * @param session{object}
  * @param next{function}
  * @return {Void}
  */
 Handler.prototype.resumeTopic = function (msg, session, next) {
-    var self = this, userId = msg.userId, chatId = msg.chatId, topicId = msg.topicId, route = msg.route || self.app.get("chatRoute");
-    if (userId && chatId && topicId) {
-        var channel = self.channelService.getChannel(chatId, false);
-        if (channel) {
-            var record = channel.getMember(topicId);
+    var self = this, userId = msg.userId, chatId = msg.chatId, topicId = msg.topicId, deviceId = msg.deviceId, route = msg.route || self.app.get("chatRoute");
+    if (userId && chatId && topicId && deviceId) {
+        async.waterfall(
+            [
+                function (callback) {
+                    self.createTopic(_.extend(_.pick(msg, "userId", "chatId", "topicId", "deviceId", "route", "enc")), session, function (err, ret) {
+                        if (ret.code != 200) {
+                            callback(ret.msg);
+                        } else {
+                            callback(null);
+                        }
+                    });
+                },
+                function (callback) {
+                    var channel = self.channelService.getChannel(chatId, false);
+                    var record = channel.getMember(topicId);
 
-            if (record && record.memberType === self.app.get("topicMemberType")) {
-                if (record.creator === userId) {
-                    record.topicState = self.app.get("topicOpenState");
+                    if (record.creator === userId) {
+                        record.topicState = self.app.get("topicOpenState");
 
-                    var uids = self.getOtherClientIds(chatId, userId);
+                        var uids = self.getOtherClientIds(chatId, userId);
 
-                    if (uids && uids.length) {
-                        self.channelService.pushMessageByUids(
-                            route,
-                            {
-                                chatId: chatId,
-                                userId: userId,
-                                topicId: topicId,
-                                signal: self.app.get("topicResumeSignal"),
-                                topicState: self.app.get("topicOpenState")
-                            },
-                            uids,
-                            function (err, failIds) {
-                                if (err) {
-                                    logger.error('chatHandler.resumeTopic:' + err.toString());
-                                } else {
-                                    failIds && failIds.length && logger.error("chatHandler.resumeTopic:Publish fail id:%s", failIds.toString());
+                        if (uids && uids.length) {
+                            self.channelService.pushMessageByUids(
+                                route,
+                                {
+                                    chatId: chatId,
+                                    userId: userId,
+                                    topicId: topicId,
+                                    signal: self.app.get("topicResumeSignal"),
+                                    topicState: self.app.get("topicOpenState")
+                                },
+                                uids,
+                                function (err, failIds) {
+                                    if (err) {
+                                        logger.error('chatHandler.pauseChatTopic:' + err.toString());
+                                    } else {
+                                        failIds && failIds.length && logger.error("chatHandler.resumeTopic:Publish fail id:%s", failIds.toString());
+                                    }
+
+                                    callback(null);
                                 }
-                                next(null, {code: 200, msg: {}});
-                            }
-                        );
+                            );
+                        } else {
+                            callback('chatHandler.resumeTopic:No user found.');
+                        }
                     } else {
-                        next(null, {code: 200, msg: 'chatHandler.resumeTopic:No user found.'});
+                        callback('chatHandler.resumeTopic:Only topic creator is allowed.');
                     }
-                } else {
-                    next(null, {code: 500, msg: 'chatHandler.resumeTopic:Only topic creator is allowed.'});
                 }
-            } else {
-                next(null, {code: 200, msg: 'chatHandler.resumeTopic:Topic not found.'});
-            }
+            ], function (err) {
+                if (err) {
+                    logger.error('chatHandler.resumeTopic:' + err.toString());
 
-        } else {
-            next(null, {code: 200, msg: 'chatHandler.resumeTopic:Chat not found.'});
-        }
+                    next(null, {code: 500, msg: 'chatHandler.resumeTopic:' + err.toString()});
+                } else {
+                    next(null, {
+                        code: 200,
+                        msg: {}
+                    });
+                }
+            }
+        );
     } else {
         next(null, {code: 500, msg: 'chatHandler.resumeTopic:Parameter is empty.'});
     }
