@@ -1135,7 +1135,7 @@ Handler.prototype.acceptChatInvitation = function (msg, session, next) {
  * @return {Void}
  */
 Handler.prototype.closeChat = function (msg, session, next) {
-    var userId = msg.userId, chatId = msg.chatId, route = msg.route || self.app.get("chatRoute");
+    var self = this, userId = msg.userId, chatId = msg.chatId, route = msg.route || self.app.get("chatRoute");
     if (userId && chatId) {
         var channel = self.channelService.getChannel(chatId, false);
         if (channel) {
